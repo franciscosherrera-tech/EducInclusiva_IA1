@@ -1,24 +1,47 @@
 // lib/screens/subjects_screen.dart
 
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants/courses.dart';
 import '../models/subject.dart';
 import '../providers/subject_provider.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
 import '../theme/app_colors.dart';
+import '../widgets/profile_avatar_button.dart';
 import 'chat_screen.dart';
-import 'profile_screen.dart';
+import 'student_subject_screen.dart';
 
-class SubjectsScreen extends StatelessWidget {
+class SubjectsScreen extends StatefulWidget {
   const SubjectsScreen({super.key});
+
+  @override
+  State<SubjectsScreen> createState() => _SubjectsScreenState();
+}
+
+class _SubjectsScreenState extends State<SubjectsScreen> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Vuelve a traer el curso asignado, el perfil de accesibilidad y las materias.
+  Future<void> _refresh() async {
+    await Future.wait([
+      context.read<UserProvider>().loadFromSupabase(),
+      context.read<AccessibilityProvider>().loadStudentSettings(),
+      context.read<SubjectProvider>().fetchSubjects(),
+    ]);
+  }
 
   void _showAddSubjectDialog(BuildContext context) {
     final nameController = TextEditingController();
     final descController = TextEditingController();
-    final yearController = TextEditingController();
-    final divisionController = TextEditingController();
+    String? selectedYear;
+    String? selectedDivision;
 
     Color selectedColor = AppColors.periwinkle;
     IconData selectedIcon = Icons.school;
@@ -62,22 +85,29 @@ class SubjectsScreen extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: yearController,
-                        decoration: const InputDecoration(
-                          labelText: 'Año',
-                          hintText: 'Ej. 1°',
-                        ),
+                      child: DropdownButtonFormField<String>(
+                        initialValue: selectedYear,
+                        decoration: const InputDecoration(labelText: 'Año'),
+                        items: Courses.years
+                            .map((y) =>
+                                DropdownMenuItem(value: y, child: Text(y)))
+                            .toList(),
+                        onChanged: (val) =>
+                            setStateModal(() => selectedYear = val),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: TextField(
-                        controller: divisionController,
-                        decoration: const InputDecoration(
-                          labelText: 'División',
-                          hintText: 'Ej. A',
-                        ),
+                      child: DropdownButtonFormField<String>(
+                        initialValue: selectedDivision,
+                        decoration:
+                            const InputDecoration(labelText: 'División'),
+                        items: Courses.divisions
+                            .map((d) =>
+                                DropdownMenuItem(value: d, child: Text(d)))
+                            .toList(),
+                        onChanged: (val) =>
+                            setStateModal(() => selectedDivision = val),
                       ),
                     ),
                   ],
@@ -135,27 +165,37 @@ class SubjectsScreen extends StatelessWidget {
               ),
               onPressed: () async {
                 final name = nameController.text.trim();
-                if (name.isNotEmpty) {
-                  final newSub = Subject(
-                    id: '',
-                    name: name,
-                    year: yearController.text.trim(),
-                    division: divisionController.text.trim(),
-                    iconCode: selectedIcon.codePoint,
-                    colorValue: selectedColor.value,
-                    description: descController.text.trim(),
+                if (name.isEmpty ||
+                    selectedYear == null ||
+                    selectedDivision == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Completa el nombre, el año y la división'),
+                    ),
                   );
+                  return;
+                }
 
-                  try {
-                    await Provider.of<SubjectProvider>(context, listen: false)
-                        .addSubject(newSub);
-                    if (context.mounted) Navigator.pop(ctx);
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al guardar materia: $e')),
-                      );
-                    }
+                final newSub = Subject(
+                  id: '',
+                  name: name,
+                  year: selectedYear!,
+                  division: selectedDivision!,
+                  iconCode: selectedIcon.codePoint,
+                  colorValue: selectedColor.value,
+                  description: descController.text.trim(),
+                );
+
+                try {
+                  await Provider.of<SubjectProvider>(context, listen: false)
+                      .addSubject(newSub);
+                  if (context.mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error al guardar materia: $e')),
+                    );
                   }
                 }
               },
@@ -184,9 +224,18 @@ class SubjectsScreen extends StatelessWidget {
       id: '00000000-0000-0000-0000-000000000000',
       name: 'Chat General',
       iconCode: Icons.forum_rounded.codePoint,
-      colorValue: primaryColor.value,
+      colorValue: primaryColor.toARGB32(),
       description: 'Consultas generales libremente con el Tutor IA',
     );
+
+    // Solo las materias del curso que le asignó la psicopedagoga
+    final query = _search.text.trim().toLowerCase();
+    final mySubjects = subjectProvider.subjects
+        .where((s) =>
+            s.year == userProvider.year &&
+            s.division == userProvider.division)
+        .where((s) => query.isEmpty || s.name.toLowerCase().contains(query))
+        .toList();
 
     final Color bgColor = accessibility.isHighContrast
         ? Colors.black
@@ -199,82 +248,51 @@ class SubjectsScreen extends StatelessWidget {
         : (Theme.of(context).brightness == Brightness.dark
             ? Colors.white
             : AppColors.darkBlue);
+    final Color appBarFg =
+        accessibility.isHighContrast ? Colors.yellowAccent : Colors.white;
 
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
         backgroundColor:
             accessibility.isHighContrast ? Colors.black : primaryColor,
-        foregroundColor:
-            accessibility.isHighContrast ? Colors.yellowAccent : Colors.white,
+        foregroundColor: appBarFg,
+        leading: IconButton(
+          tooltip: 'Inicio',
+          icon: const Icon(Icons.home_rounded),
+          onPressed: () {
+            _search.clear();
+            setState(() {});
+          },
+        ),
+        titleSpacing: 0,
         title: Text(
-          'Materias de Estudio',
+          'Inicio',
           style: accessibility.getTextStyle(
             overrideSize: accessibility.fontSize * 1.1,
-            color: accessibility.isHighContrast
-                ? Colors.yellowAccent
-                : Colors.white,
+            fontWeight: FontWeight.bold,
+            color: appBarFg,
           ),
         ),
-        actions: [
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProfileScreen(),
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: Builder(
-                builder: (_) {
-                  final path = userProvider.profileImagePath;
-                  ImageProvider? avatarImage;
-
-                  if (path.isNotEmpty) {
-                    if (path.startsWith('http')) {
-                      avatarImage = NetworkImage(path);
-                    } else {
-                      final file = File(path);
-                      if (file.existsSync()) avatarImage = FileImage(file);
-                    }
-                  }
-
-                  return avatarImage != null
-                      ? CircleAvatar(
-                          radius: 18,
-                          backgroundImage: avatarImage,
-                        )
-                      : userProvider.getDefaultAvatar(
-                          radius: 18,
-                          color: Colors.white,
-                        );
-                },
-              ),
-            ),
-          ),
-        ],
+        actions: [ProfileAvatarButton(onReturn: _refresh)],
       ),
       body: RefreshIndicator(
-        onRefresh: () => subjectProvider.fetchSubjects(),
-        child: Padding(
+        onRefresh: _refresh,
+        child: ListView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '¿Qué te gustaría estudiar hoy?',
-                style: accessibility.getTextStyle(
-                  overrideSize: accessibility.fontSize * 1.25,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                ),
+          children: [
+            Text(
+              '¿Qué te gustaría estudiar hoy?',
+              style: accessibility.getTextStyle(
+                overrideSize: accessibility.fontSize * 1.25,
+                fontWeight: FontWeight.bold,
+                color: textColor,
               ),
+            ),
+            if (userProvider.hasCourse) ...[
               const SizedBox(height: 4),
               Text(
-                'Selecciona una asignatura o accede al chat libre:',
+                'Tu curso: ${userProvider.year} ${userProvider.division}',
                 style: accessibility.getTextStyle(
                   overrideSize: accessibility.fontSize * 0.85,
                   color: accessibility.isHighContrast
@@ -282,179 +300,234 @@ class SubjectsScreen extends StatelessWidget {
                       : textColor.withValues(alpha: 0.7),
                 ),
               ),
-              const SizedBox(height: 14),
-              Card(
-                color: cardColor,
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(
-                      color: primaryColor.withValues(alpha: 0.5), width: 1.5),
-                ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ChatScreen(subject: generalSubject),
+            ],
+            const SizedBox(height: 14),
+
+            // --- Buscador de materias ---
+            TextField(
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              style: accessibility.getTextStyle(color: textColor),
+              decoration: InputDecoration(
+                hintText: 'Buscar materia...',
+                prefixIcon: Icon(Icons.search, color: primaryColor),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Borrar búsqueda',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {});
+                        },
                       ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 14.0),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: primaryColor,
-                          child: Icon(
-                            Icons.forum_rounded,
-                            color: accessibility.isHighContrast
-                                ? Colors.black
-                                : Colors.white,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Chat General con Tutor IA',
-                                style: accessibility.getTextStyle(
-                                  overrideSize: accessibility.fontSize * 1.0,
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Haz consultas libres sobre cualquier tema.',
-                                style: accessibility.getTextStyle(
-                                  overrideSize: accessibility.fontSize * 0.8,
-                                  color: accessibility.isHighContrast
-                                      ? Colors.white70
-                                      : textColor.withValues(alpha: 0.8),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          color: primaryColor,
-                          size: 18,
-                        ),
-                      ],
+                filled: true,
+                fillColor: accessibility.isHighContrast
+                    ? Colors.grey.shade900
+                    : Theme.of(context).cardColor,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                      color: primaryColor.withValues(alpha: 0.4)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                      color: primaryColor.withValues(alpha: 0.4)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // --- Chat general ---
+            Card(
+              color: cardColor,
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                    color: primaryColor.withValues(alpha: 0.5), width: 1.5),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(subject: generalSubject),
                     ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0, vertical: 14.0),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: primaryColor,
+                        child: Icon(
+                          Icons.forum_rounded,
+                          color: accessibility.isHighContrast
+                              ? Colors.black
+                              : Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Chat General con Tutor IA',
+                              style: accessibility.getTextStyle(
+                                overrideSize: accessibility.fontSize * 1.0,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Haz consultas libres sobre cualquier tema.',
+                              style: accessibility.getTextStyle(
+                                overrideSize: accessibility.fontSize * 0.8,
+                                color: accessibility.isHighContrast
+                                    ? Colors.white70
+                                    : textColor.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: primaryColor,
+                        size: 18,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Materias Registradas',
-                style: accessibility.getTextStyle(
-                  overrideSize: accessibility.fontSize * 0.95,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Mis Materias',
+              style: accessibility.getTextStyle(
+                overrideSize: accessibility.fontSize * 0.95,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: subjectProvider.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : GridView.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 1.0,
-                        ),
-                        itemCount: subjectProvider.subjects.length,
-                        itemBuilder: (context, index) {
-                          final subject = subjectProvider.subjects[index];
-                          return Card(
-                            color: accessibility.isHighContrast
-                                ? Colors.grey.shade900
-                                : Theme.of(context).cardColor,
-                            elevation: 3,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        ChatScreen(subject: subject),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  gradient: LinearGradient(
-                                    colors: accessibility.isHighContrast
-                                        ? [
-                                            Colors.grey.shade900,
-                                            Colors.grey.shade900
-                                          ]
-                                        : [
-                                            primaryColor.withValues(
-                                                alpha: 0.15),
-                                            primaryColor.withValues(
-                                                alpha: 0.05),
-                                          ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 28,
-                                      backgroundColor:
-                                          primaryColor.withValues(alpha: 0.2),
-                                      child: Icon(
-                                        subject.icon,
-                                        color: accessibility.isHighContrast
-                                            ? Colors.yellowAccent
-                                            : primaryColor,
-                                        size: 30,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      subject.name,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: accessibility.getTextStyle(
-                                        overrideSize:
-                                            accessibility.fontSize * 0.9,
-                                        fontWeight: FontWeight.bold,
-                                        color: textColor,
-                                      ),
-                                    ),
+            ),
+            const SizedBox(height: 10),
+
+            // --- Grilla de materias ---
+            if (subjectProvider.isLoading)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (!userProvider.hasCourse)
+              _InfoMessage(
+                icon: Icons.groups_rounded,
+                text:
+                    'Todavía no tenés un curso asignado.\nPedile a tu psicopedagoga que te lo asigne.',
+                color: primaryColor,
+                textColor: textColor,
+                accessibility: accessibility,
+              )
+            else if (mySubjects.isEmpty)
+              _InfoMessage(
+                icon: Icons.search_off_rounded,
+                text: query.isEmpty
+                    ? 'Tu curso todavía no tiene materias cargadas.'
+                    : 'No hay materias que coincidan con "${_search.text}".',
+                color: primaryColor,
+                textColor: textColor,
+                accessibility: accessibility,
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.0,
+                ),
+                itemCount: mySubjects.length,
+                itemBuilder: (context, index) {
+                  final subject = mySubjects[index];
+                  return Card(
+                    color: accessibility.isHighContrast
+                        ? Colors.grey.shade900
+                        : Theme.of(context).cardColor,
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                StudentSubjectScreen(subject: subject),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          gradient: LinearGradient(
+                            colors: accessibility.isHighContrast
+                                ? [Colors.grey.shade900, Colors.grey.shade900]
+                                : [
+                                    primaryColor.withValues(alpha: 0.15),
+                                    primaryColor.withValues(alpha: 0.05),
                                   ],
-                                ),
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 28,
+                              backgroundColor:
+                                  primaryColor.withValues(alpha: 0.2),
+                              child: Icon(
+                                subject.icon,
+                                color: accessibility.isHighContrast
+                                    ? Colors.yellowAccent
+                                    : primaryColor,
+                                size: 30,
                               ),
                             ),
-                          );
-                        },
+                            const SizedBox(height: 10),
+                            Text(
+                              subject.name,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: accessibility.getTextStyle(
+                                overrideSize: accessibility.fontSize * 0.9,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
+          ],
         ),
       ),
       floatingActionButton: isTeacher
@@ -476,6 +549,42 @@ class SubjectsScreen extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+class _InfoMessage extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color textColor;
+  final AccessibilityProvider accessibility;
+
+  const _InfoMessage({
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.textColor,
+    required this.accessibility,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: color.withValues(alpha: 0.6)),
+          const SizedBox(height: 12),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: accessibility.getTextStyle(
+              color: textColor.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

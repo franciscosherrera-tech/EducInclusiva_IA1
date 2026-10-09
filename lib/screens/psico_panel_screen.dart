@@ -3,8 +3,15 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/student_settings.dart';
+import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
+import '../services/student_settings_service.dart';
+import '../widgets/profile_avatar_button.dart';
 import 'auth_screen.dart';
+import 'psico_materials_tab.dart';
+import 'psico_student_settings_screen.dart';
+import 'psico_student_tracking_screen.dart';
 
 String _fmtDate(String? iso) {
   if (iso == null) return '';
@@ -15,7 +22,7 @@ String _fmtDate(String? iso) {
 }
 
 // ---------------------------------------------------------------------------
-// 1) Lista de alumnos
+// 1) Tabla de alumnos
 // ---------------------------------------------------------------------------
 class PsicoPanelScreen extends StatefulWidget {
   const PsicoPanelScreen({super.key});
@@ -25,8 +32,26 @@ class PsicoPanelScreen extends StatefulWidget {
 }
 
 class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
+  static const String _filterAll = 'Todos';
+  static const String _filterNoCourse = 'Sin curso';
+  static const List<String> _filters = [
+    _filterAll,
+    'TEA',
+    'TDAH',
+    'Dislexia',
+    'Disgrafía',
+    'Disortografía',
+    'Discalculia',
+    'Daltonismo',
+    'Lengua de señas',
+    _filterNoCourse,
+  ];
+
   final _search = TextEditingController();
+  final _settingsService = StudentSettingsService();
   List<Map<String, dynamic>> _students = [];
+  Map<String, StudentSettings> _settings = {};
+  String _filter = _filterAll;
   bool _loading = true;
   String? _error;
 
@@ -50,18 +75,21 @@ class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
     try {
       final data = await Supabase.instance.client
           .from('profiles')
-          .select('id, name, email, role')
+          .select('id, name, email, role, year, division')
           .order('name');
+      final settings = await _settingsService.getAllSettings();
       if (!mounted) return;
       final all = List<Map<String, dynamic>>.from(data);
       setState(() {
         _students = all
             .where((p) =>
-                (p['role'] ?? '').toString().toLowerCase() != 'psicopedagoga')
+                (p['role'] ?? '').toString().toLowerCase() == 'estudiante')
             .toList();
+        _settings = settings;
         _loading = false;
       });
     } catch (e) {
+      debugPrint('Error al cargar alumnos: $e');
       if (!mounted) return;
       setState(() {
         _error = 'No se pudo cargar la lista de alumnos.';
@@ -79,87 +107,279 @@ class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
     );
   }
 
+  StudentSettings _settingsOf(Map<String, dynamic> s) =>
+      _settings[s['id']] ?? StudentSettings(studentId: s['id'] as String);
+
+  String _courseOf(Map<String, dynamic> s) =>
+      '${s['year'] ?? ''} ${s['division'] ?? ''}'.trim();
+
+  Future<void> _openSettings(Map<String, dynamic> s, String name) async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PsicoStudentSettingsScreen(
+          studentId: s['id'] as String,
+          studentName: name,
+          year: s['year'] as String?,
+          division: s['division'] as String?,
+          settings: _settings[s['id']],
+        ),
+      ),
+    );
+    if (saved == true) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accessibility = Provider.of<AccessibilityProvider>(context);
+    final primaryColor = accessibility.activePrimaryColor;
+    final appBarFg =
+        accessibility.isHighContrast ? Colors.yellowAccent : Colors.white;
+
     final q = _search.text.trim().toLowerCase();
     final filtered = _students.where((s) {
       final name = (s['name'] ?? '').toString().toLowerCase();
       final email = (s['email'] ?? '').toString().toLowerCase();
-      return q.isEmpty || name.contains(q) || email.contains(q);
+      final matchesSearch = q.isEmpty || name.contains(q) || email.contains(q);
+      if (!matchesSearch) return false;
+      if (_filter == _filterAll) return true;
+      if (_filter == _filterNoCourse) return _courseOf(s).isEmpty;
+      return _settingsOf(s).activeConditions.contains(_filter);
     }).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Panel de psicopedagogía'),
-        actions: [
-          IconButton(
-            tooltip: 'Actualizar',
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
+    Widget check(bool value) => value
+        ? Icon(Icons.check_circle_rounded, color: primaryColor, size: 20)
+        : Icon(Icons.remove, color: Colors.grey.shade400, size: 18);
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor:
+              accessibility.isHighContrast ? Colors.black : primaryColor,
+          foregroundColor: appBarFg,
+          title: const Text('Panel de psicopedagogía'),
+          bottom: TabBar(
+            labelColor: appBarFg,
+            unselectedLabelColor: appBarFg.withValues(alpha: 0.7),
+            indicatorColor: appBarFg,
+            tabs: const [
+              Tab(icon: Icon(Icons.groups_rounded), text: 'Alumnos'),
+              Tab(icon: Icon(Icons.folder_copy_rounded), text: 'Materiales'),
+            ],
           ),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Buscar por nombre o correo',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
+          actions: [
+            IconButton(
+              tooltip: 'Actualizar',
+              icon: const Icon(Icons.refresh),
+              onPressed: _load,
             ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text(_error!))
-                    : filtered.isEmpty
-                        ? const Center(
-                            child: Text('No hay alumnos para mostrar.'))
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (_, i) {
-                                final s = filtered[i];
-                                final name =
-                                    (s['name'] ?? 'Sin nombre').toString();
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    child: Text(name.isNotEmpty
-                                        ? name[0].toUpperCase()
-                                        : '?'),
-                                  ),
-                                  title: Text(name),
-                                  subtitle: Text((s['email'] ?? '').toString()),
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => StudentChatsScreen(
-                                        studentId: s['id'] as String,
-                                        studentName: name,
+            IconButton(
+              tooltip: 'Cerrar sesión',
+              icon: const Icon(Icons.logout),
+              onPressed: _logout,
+            ),
+            const ProfileAvatarButton(),
+          ],
+        ),
+        body: TabBarView(
+          children: [
+            Column(
+              children: [
+                // --- Buscador + filtro ---
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar alumno por nombre o correo',
+                            prefixIcon: Icon(Icons.search, color: primaryColor),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<String>(
+                        tooltip: 'Filtrar por condición',
+                        icon: Badge(
+                          isLabelVisible: _filter != _filterAll,
+                          child: Icon(Icons.filter_list_rounded,
+                              color: primaryColor),
+                        ),
+                        initialValue: _filter,
+                        onSelected: (f) => setState(() => _filter = f),
+                        itemBuilder: (_) => _filters
+                            .map((f) => PopupMenuItem(value: f, child: Text(f)))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                // --- Chips de filtro (scroll horizontal) ---
+                SizedBox(
+                  height: 48,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _filters.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 6),
+                    itemBuilder: (_, i) {
+                      final f = _filters[i];
+                      return Center(
+                        child: ChoiceChip(
+                          label: Text(f),
+                          selected: _filter == f,
+                          selectedColor: primaryColor.withValues(alpha: 0.25),
+                          onSelected: (_) => setState(() => _filter = f),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(child: Text(_error!))
+                          : filtered.isEmpty
+                              ? const Center(
+                                  child: Text('No hay alumnos para mostrar.'))
+                              : RefreshIndicator(
+                                  onRefresh: _load,
+                                  child: SingleChildScrollView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.only(bottom: 24),
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: DataTable(
+                                        headingRowColor: WidgetStatePropertyAll(
+                                            primaryColor.withValues(
+                                                alpha: 0.12)),
+                                        columnSpacing: 18,
+                                        columns: const [
+                                          DataColumn(label: Text('Alumno')),
+                                          DataColumn(label: Text('Curso')),
+                                          DataColumn(label: Text('TEA')),
+                                          DataColumn(label: Text('TDAH')),
+                                          DataColumn(label: Text('Dislexia')),
+                                          DataColumn(label: Text('Disgrafía')),
+                                          DataColumn(
+                                              label: Text('Disortografía')),
+                                          DataColumn(
+                                              label: Text('Discalculia')),
+                                          DataColumn(label: Text('Daltonismo')),
+                                          DataColumn(label: Text('LSA')),
+                                          DataColumn(label: Text('Acciones')),
+                                        ],
+                                        rows: filtered.map((s) {
+                                          final name =
+                                              (s['name'] ?? 'Sin nombre')
+                                                  .toString();
+                                          final st = _settingsOf(s);
+                                          final course = _courseOf(s);
+                                          return DataRow(cells: [
+                                            DataCell(
+                                              Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(name,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  Text(
+                                                    (s['email'] ?? '')
+                                                        .toString(),
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            DataCell(Text(
+                                              course.isEmpty
+                                                  ? 'Sin asignar'
+                                                  : course,
+                                              style: TextStyle(
+                                                color: course.isEmpty
+                                                    ? Colors.red
+                                                    : null,
+                                              ),
+                                            )),
+                                            DataCell(check(st.teaMode)),
+                                            DataCell(check(st.adhd)),
+                                            DataCell(check(st.dyslexia)),
+                                            DataCell(check(st.dysgraphia)),
+                                            DataCell(check(st.dysorthography)),
+                                            DataCell(check(st.dyscalculia)),
+                                            DataCell(
+                                              st.colorBlindness ==
+                                                      ColorBlindType.none
+                                                  ? check(false)
+                                                  : Text(
+                                                      st.colorBlindness.label),
+                                            ),
+                                            DataCell(check(st.signLanguage)),
+                                            DataCell(Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  tooltip: 'Configurar perfil',
+                                                  icon: Icon(
+                                                      Icons.settings_rounded,
+                                                      color: primaryColor),
+                                                  onPressed: () =>
+                                                      _openSettings(s, name),
+                                                ),
+                                                IconButton(
+                                                  tooltip:
+                                                      'Seguimiento (materiales y chats)',
+                                                  icon: Icon(
+                                                      Icons.insights_rounded,
+                                                      color: primaryColor),
+                                                  onPressed: () =>
+                                                      Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          PsicoStudentTrackingScreen(
+                                                        studentId:
+                                                            s['id'] as String,
+                                                        studentName: name,
+                                                        year: s['year']
+                                                            as String?,
+                                                        division: s['division']
+                                                            as String?,
+                                                        settings: st,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            )),
+                                          ]);
+                                        }).toList(),
                                       ),
                                     ),
                                   ),
-                                );
-                              },
-                            ),
-                          ),
-          ),
-        ],
+                                ),
+                ),
+              ],
+            ),
+            PsicoMaterialsTab(primaryColor: primaryColor),
+          ],
+        ),
       ),
     );
   }

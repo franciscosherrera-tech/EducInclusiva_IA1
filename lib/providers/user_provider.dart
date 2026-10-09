@@ -13,8 +13,14 @@ class UserProvider extends ChangeNotifier {
   String _profileImagePath = '';
   String _role = _defaultRole;
   bool _onboardingCompleted = false;
+  // Curso asignado por la psicopedagoga (ej. "1°" + "2da")
+  String _year = '';
+  String _division = '';
 
   String get name => _name;
+  String get year => _year;
+  String get division => _division;
+  bool get hasCourse => _year.isNotEmpty && _division.isNotEmpty;
   String get email => _email;
   String get profileImagePath => _profileImagePath;
   String get role => _role;
@@ -62,6 +68,8 @@ class UserProvider extends ChangeNotifier {
       _profileImagePath = (data?['photo_url'] as String?) ?? '';
       _role = (data?['role'] as String?) ?? _role;
       _onboardingCompleted = (data?['onboarding_completed'] as bool?) ?? false;
+      _year = (data?['year'] as String?) ?? '';
+      _division = (data?['division'] as String?) ?? '';
 
       await _saveCache();
     } catch (e) {
@@ -169,6 +177,8 @@ class UserProvider extends ChangeNotifier {
     _profileImagePath = '';
     _role = _defaultRole;
     _onboardingCompleted = false;
+    _year = '';
+    _division = '';
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_name');

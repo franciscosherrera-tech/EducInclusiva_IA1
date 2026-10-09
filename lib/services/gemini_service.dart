@@ -68,6 +68,7 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
   Future<String> sendMessageWithHistory({
     required List<Map<String, dynamic>> messagesHistory,
     bool isTeaMode = false,
+    String profileInstructions = '',
   }) async {
     if (_apiKey.isEmpty || _apiKey == 'PEGA_AQUI_TU_CLAVE') {
       return 'Falta configurar la clave de la API en GeminiService.';
@@ -101,8 +102,12 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
 
     if (contents.isEmpty) return 'No hay contenido para enviar.';
 
-    final String systemText =
+    String systemText =
         isTeaMode ? '$_baseInstruction\n$_teaInstruction' : _baseInstruction;
+    if (profileInstructions.trim().isNotEmpty) {
+      systemText += '\nPERFIL DEL ESTUDIANTE (adapta SIEMPRE tus respuestas):\n'
+          '$profileInstructions\n';
+    }
 
     final String body = jsonEncode({
       'system_instruction': {

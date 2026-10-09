@@ -12,6 +12,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/material_model.dart';
 import '../models/subject.dart';
 import '../providers/accessibility_provider.dart';
 import '../services/gemini_service.dart';
@@ -23,7 +24,10 @@ import 'main_navigation_screen.dart';
 class ChatScreen extends StatefulWidget {
   final Subject? subject;
 
-  const ChatScreen({super.key, this.subject});
+  /// Si viene, el chat arranca preguntándole a la IA sobre este contenido.
+  final StudyMaterial? initialMaterial;
+
+  const ChatScreen({super.key, this.subject, this.initialMaterial});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -64,8 +68,65 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _initTts();
     _initSpeech();
-    _setupChatSession();
+    _setupChatSession().then((_) {
+      final material = widget.initialMaterial;
+      if (material != null && mounted) {
+        _askAboutMaterial(
+          title: material.title,
+          desc: material.description ?? '',
+          fileUrl: material.fileUrl,
+          fileName: material.fileName,
+        );
+      }
+    });
     _fetchSubjectMaterials();
+  }
+
+  /// Descarga el archivo del docente, lo adjunta y le pide a la IA que lo lea.
+  Future<void> _askAboutMaterial({
+    required String title,
+    required String desc,
+    required String? fileUrl,
+    String? fileName,
+  }) async {
+    final name = (fileName ?? fileUrl ?? '').toLowerCase();
+    final String mimeType =
+        name.endsWith('.txt') ? 'text/plain' : 'application/pdf';
+
+    if (name.endsWith('.doc') || name.endsWith('.docx')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'El Tutor IA solo puede leer archivos PDF o TXT. Descargá el archivo para verlo.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    Uint8List? downloadedBytes;
+    if (fileUrl != null && fileUrl.isNotEmpty) {
+      try {
+        final res = await http.get(Uri.parse(fileUrl));
+        if (res.statusCode == 200) downloadedBytes = res.bodyBytes;
+      } catch (e) {
+        debugPrint('Error al descargar el archivo: $e');
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _attachedBytes = downloadedBytes;
+      _attachedMimeType = downloadedBytes != null ? mimeType : null;
+      _attachedFileName = downloadedBytes != null ? '$title.pdf' : null;
+      _controller.text = desc.isNotEmpty
+          ? 'Lee detenidamente el PDF adjunto ("$title"). Consigna: "$desc". ¿De qué trata y por dónde empezamos?'
+          : 'Lee detenidamente el PDF adjunto ("$title"). ¿De qué trata y por dónde empezamos?';
+      _isLoading = false;
+    });
+
+    await _sendMessage();
   }
 
   /// Carga los materiales subidos por los docentes para esta materia específica
@@ -296,6 +357,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final response = await _geminiService.sendMessageWithHistory(
       messagesHistory: _messages,
       isTeaMode: accessibility.isTeaMode,
+      profileInstructions: accessibility.aiProfileInstructions,
     );
 
     setState(() {
@@ -571,41 +633,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                           size: 16),
                                       label: const Text('Preguntar',
                                           style: TextStyle(fontSize: 12)),
-                                      onPressed: () async {
-                                        setState(() => _isLoading = true);
-
-                                        Uint8List? downloadedBytes;
-                                        String? mimeType;
-
-                                        if (fileUrl != null &&
-                                            fileUrl.toString().isNotEmpty) {
-                                          try {
-                                            final res = await http.get(
-                                                Uri.parse(fileUrl.toString()));
-                                            if (res.statusCode == 200) {
-                                              downloadedBytes = res.bodyBytes;
-                                              mimeType = 'application/pdf';
-                                            }
-                                          } catch (e) {
-                                            debugPrint(
-                                                'Error al descargar el PDF: $e');
-                                          }
-                                        }
-
-                                        if (mounted) {
-                                          setState(() {
-                                            _attachedBytes = downloadedBytes;
-                                            _attachedMimeType = mimeType;
-                                            _attachedFileName = '$title.pdf';
-                                            _controller.text = desc.isNotEmpty
-                                                ? 'Lee detenidamente el PDF adjunto ("$title"). Consigna: "$desc". ¿De qué trata y por dónde empezamos?'
-                                                : 'Lee detenidamente el PDF adjunto ("$title"). ¿De qué trata y por dónde empezamos?';
-                                            _isLoading = false;
-                                          });
-
-                                          await _sendMessage();
-                                        }
-                                      },
+                                      onPressed: () => _askAboutMaterial(
+                                        title: title.toString(),
+                                        desc: desc.toString(),
+                                        fileUrl: fileUrl?.toString(),
+                                        fileName: mat['file_name']?.toString(),
+                                      ),
                                     ),
                                   ),
                                 );
