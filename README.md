@@ -64,18 +64,25 @@ Además, **cada usuario elige su color principal** y su tema (claro, oscuro o el
 
 ```mermaid
 flowchart LR
-    App["📱 App Flutter<br/>docente · alumno · psico"]
-    DB[("🗄️ Supabase<br/>Postgres + Auth + Storage")]
-    IA["✨ Gemini<br/>Tutor IA"]
-    EF["⚡ Edge Function<br/>notify-new-material"]
-    FCM["🔔 Firebase<br/>Cloud Messaging"]
+    App["App Flutter - docente, alumno y psicopedagoga"]
+    DB[("Supabase - Postgres, Auth y Storage")]
+    IA["Gemini - Tutor IA"]
+    EF["Edge Function - notify-new-material"]
+    FCM["Firebase Cloud Messaging"]
 
-    App <-->|"datos, archivos y tiempo real"| DB
-    App -->|"pregunta + perfil del alumno"| IA
-    DB -->|"INSERT de un contenido<br/>(trigger SQL)"| EF
-    EF -->|"API HTTP v1"| FCM
-    FCM -->|"notificación push"| App
+    App <--> DB
+    App --> IA
+    DB --> EF
+    EF --> FCM
+    FCM --> App
 ```
+
+| Flecha | Qué pasa |
+| --- | --- |
+| App ↔ Supabase | Datos, archivos y avisos en tiempo real |
+| App → Gemini | La pregunta del alumno junto con su perfil de accesibilidad |
+| Supabase → Edge Function | Al insertar un contenido, un trigger SQL llama a la función |
+| Edge Function → Firebase → App | La función envía la notificación push al celular |
 
 **Notificaciones:** cuando un docente sube un contenido, los alumnos de ese curso reciben
 un aviso en la barra de notificaciones, aunque tengan la app cerrada.
