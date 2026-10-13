@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
 import '../theme/app_colors.dart';
+import '../widgets/appearance_card.dart';
 import 'auth_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -77,27 +78,18 @@ class SettingsScreen extends StatelessWidget {
     final bool hasSession =
         Supabase.instance.client.auth.currentSession != null;
 
-    final List<Color> themePalette = [
-      AppColors.darkBlue,
-      AppColors.periwinkle,
-      AppColors.mint,
-      AppColors.warmYellow,
-      AppColors.lightBlue,
-      const Color(0xFFE892A8),
-    ];
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color bgColor = accessibility.isHighContrast
+        ? Colors.black
+        : Theme.of(context).scaffoldBackgroundColor;
+    final Color cardColor = accessibility.isHighContrast
+        ? Colors.grey.shade900
+        : Theme.of(context).cardColor;
+    final Color textColor = accessibility.isHighContrast || isDark
+        ? Colors.white
+        : AppColors.darkBlue;
 
-    final Color bgColor =
-        accessibility.isHighContrast ? Colors.black : AppColors.background;
-    final Color cardColor =
-        accessibility.isHighContrast ? Colors.grey.shade900 : Colors.white;
-    final Color textColor =
-        accessibility.isHighContrast ? Colors.white : AppColors.darkBlue;
-
-    final Color primaryColor = accessibility.isColorBlindMode
-        ? Colors.blue.shade700
-        : (accessibility.isHighContrast
-            ? Colors.yellowAccent
-            : accessibility.customColor);
+    final Color primaryColor = accessibility.activePrimaryColor;
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -119,105 +111,7 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          // --- PERSONALIZACIÓN DE TEMA Y COLOR ---
-          Text(
-            'Tema y Color de Interfaz',
-            style: accessibility.getTextStyle(
-                overrideSize: 18,
-                fontWeight: FontWeight.bold,
-                color: primaryColor),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            color: cardColor,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Modo de pantalla:',
-                    style: accessibility.getTextStyle(
-                        color: textColor, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text('Sistema'),
-                          icon: Icon(Icons.brightness_auto, size: 18),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text('Claro'),
-                          icon: Icon(Icons.light_mode, size: 18),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text('Oscuro'),
-                          icon: Icon(Icons.dark_mode, size: 18),
-                        ),
-                      ],
-                      selected: {accessibility.themeMode},
-                      onSelectionChanged: (Set<ThemeMode> newSelection) {
-                        accessibility.setThemeMode(newSelection.first);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Divider(color: textColor.withValues(alpha: 0.2)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Selecciona el color principal:',
-                    style: accessibility.getTextStyle(
-                        color: textColor, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: themePalette.map((color) {
-                      final isSelected = accessibility.customColor.toARGB32() ==
-                          color.toARGB32();
-                      return InkWell(
-                        onTap: () => accessibility.setCustomColor(color),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                            border: isSelected
-                                ? Border.all(
-                                    color: accessibility.isHighContrast
-                                        ? Colors.white
-                                        : Colors.black87,
-                                    width: 3)
-                                : null,
-                            boxShadow: isSelected
-                                ? [
-                                    BoxShadow(
-                                      color: color.withValues(alpha: 0.5),
-                                      blurRadius: 8,
-                                      spreadRadius: 2,
-                                    )
-                                  ]
-                                : [],
-                          ),
-                          child: isSelected
-                              ? const Icon(Icons.check, color: Colors.white)
-                              : null,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          const AppearanceCard(),
           const SizedBox(height: 16),
 
           // --- VISIÓN ---

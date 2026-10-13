@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/material_model.dart';
 import '../models/subject.dart';
@@ -36,14 +37,39 @@ class SubjectTracking {
   });
 }
 
+/// Qué hizo el alumno con un contenido puntual.
+class MaterialStats {
+  int downloads = 0;
+  int aiQuestions = 0;
+  DateTime? last;
+
+  bool get used => downloads > 0 || aiQuestions > 0;
+}
+
 class StudentTracking {
   final List<SubjectTracking> subjects;
   final List<ChatSummary> chats;
 
-  StudentTracking({required this.subjects, required this.chats});
+  /// Actividad por id de material. Vacío si todavía no hay registros.
+  final Map<String, MaterialStats> activity;
+
+  /// Actividad diaria de los últimos 28 días (del más viejo al más nuevo).
+  final List<DayActivity> days;
+
+  StudentTracking({
+    required this.subjects,
+    required this.chats,
+    this.activity = const {},
+    this.days = const [],
+  });
+
+  MaterialStats statsOf(String materialId) =>
+      activity[materialId] ?? MaterialStats();
 
   int get totalMaterials =>
       subjects.fold(0, (sum, s) => sum + s.materials.length);
+  int get materialsUsed => subjects.fold(
+      0, (sum, s) => sum + s.materials.where((m) => statsOf(m.id).used).length);
   int get totalStudentMessages =>
       chats.fold(0, (sum, c) => sum + c.studentMessages);
 
@@ -172,7 +198,45 @@ class TrackingService {
       );
     }).toList();
 
-    return StudentTracking(subjects: subjectTracking, chats: chats);
+    // --- Descargas y consultas a la IA sobre cada contenido ---
+    final activity = <String, MaterialStats>{};
+    final materialDates = <DateTime>[];
+    try {
+      final rows = List<Map<String, dynamic>>.from(await _supabase
+          .from('material_activity')
+          .select('material_id, action, created_at')
+          .eq('student_id', studentId));
+      for (final r in rows) {
+        final stats = activity.putIfAbsent(
+            r['material_id'].toString(), MaterialStats.new);
+        if (r['action'] == 'download') stats.downloads++;
+        if (r['action'] == 'ask_ai') stats.aiQuestions++;
+        final date = DateTime.tryParse(r['created_at']?.toString() ?? '');
+        if (date != null) materialDates.add(date);
+        if (date != null && (stats.last == null || date.isAfter(stats.last!))) {
+          stats.last = date;
+        }
+      }
+    } catch (e) {
+      // La tabla puede no existir todavía (falta correr actividad_y_permisos.sql)
+      debugPrint('No se pudo leer la actividad de materiales: $e');
+    }
+
+    final messageDates = messageRows
+        .where((m) => m['sender'] == 'user')
+        .map((m) => DateTime.tryParse(m['created_at']?.toString() ?? ''))
+        .whereType<DateTime>()
+        .toList();
+
+    return StudentTracking(
+      subjects: subjectTracking,
+      chats: chats,
+      activity: activity,
+      days: buildDailyActivity(
+        messageDates: messageDates,
+        materialDates: materialDates,
+      ),
+    );
   }
 
   /// Todos los materiales subidos por los docentes, del más nuevo al más viejo.
@@ -197,4 +261,55 @@ class TrackingService {
             ))
         .toList();
   }
+}
+
+/// Actividad de un día: mensajes al tutor y acciones sobre contenidos.
+class DayActivity {
+  final DateTime day;
+  final int messages;
+  final int materials;
+
+  const DayActivity({
+    required this.day,
+    required this.messages,
+    required this.materials,
+  });
+
+  int get total => messages + materials;
+}
+
+/// Agrupa la actividad por día, de los últimos [days] días terminando hoy
+/// (del más viejo al más nuevo). Los días sin actividad quedan en cero.
+List<DayActivity> buildDailyActivity({
+  required List<DateTime> messageDates,
+  required List<DateTime> materialDates,
+  DateTime? now,
+  int days = 28,
+}) {
+  final today = (now ?? DateTime.now()).toLocal();
+  final start = DateTime(today.year, today.month, today.day)
+      .subtract(Duration(days: days - 1));
+
+  DateTime dayOf(DateTime d) {
+    final l = d.toLocal();
+    return DateTime(l.year, l.month, l.day);
+  }
+
+  final messages = <DateTime, int>{};
+  final materials = <DateTime, int>{};
+  for (final d in messageDates) {
+    messages.update(dayOf(d), (v) => v + 1, ifAbsent: () => 1);
+  }
+  for (final d in materialDates) {
+    materials.update(dayOf(d), (v) => v + 1, ifAbsent: () => 1);
+  }
+
+  return List.generate(days, (i) {
+    final day = DateTime(start.year, start.month, start.day + i);
+    return DayActivity(
+      day: day,
+      messages: messages[day] ?? 0,
+      materials: materials[day] ?? 0,
+    );
+  });
 }

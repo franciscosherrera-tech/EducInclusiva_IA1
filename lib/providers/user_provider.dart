@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/push_service.dart';
 
 class UserProvider extends ChangeNotifier {
   static const String _defaultName = 'Usuario Inclusivo';
@@ -31,6 +32,27 @@ class UserProvider extends ChangeNotifier {
 
   UserProvider() {
     _loadUserData();
+    // Si FCM renueva el token del teléfono, lo volvemos a guardar
+    PushService.instance.onTokenRefresh.listen(_saveFcmToken);
+  }
+
+  /// Guarda el token de este teléfono en profiles.fcm_token para que el
+  /// servidor pueda enviarle notificaciones. Se llama al iniciar sesión.
+  Future<void> syncPushToken() async {
+    final token = await PushService.instance.getToken();
+    if (token != null) await _saveFcmToken(token);
+  }
+
+  Future<void> _saveFcmToken(String token) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+    try {
+      await _supabase
+          .from('profiles')
+          .update({'fcm_token': token}).eq('id', user.id);
+    } catch (e) {
+      debugPrint('No se pudo guardar el token de notificaciones: $e');
+    }
   }
 
   /// Carga primero la caché local y luego sincroniza con Supabase.
@@ -41,6 +63,8 @@ class UserProvider extends ChangeNotifier {
     _profileImagePath = prefs.getString('user_photo') ?? '';
     _role = prefs.getString('user_role') ?? _defaultRole;
     _onboardingCompleted = prefs.getBool('onboarding_completed') ?? false;
+    _year = prefs.getString('user_year') ?? '';
+    _division = prefs.getString('user_division') ?? '';
     notifyListeners();
 
     if (_supabase.auth.currentUser != null) {
@@ -77,6 +101,7 @@ class UserProvider extends ChangeNotifier {
       _email = user.email ?? _email;
     }
     notifyListeners();
+    syncPushToken();
   }
 
   Future<void> _saveCache() async {
@@ -86,6 +111,8 @@ class UserProvider extends ChangeNotifier {
     await prefs.setString('user_photo', _profileImagePath);
     await prefs.setString('user_role', _role);
     await prefs.setBool('onboarding_completed', _onboardingCompleted);
+    await prefs.setString('user_year', _year);
+    await prefs.setString('user_division', _division);
   }
 
   Future<void> setRole(String newRole) async {
@@ -170,6 +197,17 @@ class UserProvider extends ChangeNotifier {
 
   /// Cierra la sesión y limpia la caché local.
   Future<void> signOut() async {
+    // Este teléfono deja de recibir avisos de la cuenta que se cierra
+    final user = _supabase.auth.currentUser;
+    if (user != null) {
+      try {
+        await _supabase
+            .from('profiles')
+            .update({'fcm_token': null}).eq('id', user.id);
+      } catch (_) {}
+    }
+    await PushService.instance.deleteToken();
+
     await _supabase.auth.signOut();
 
     _name = _defaultName;
@@ -186,6 +224,8 @@ class UserProvider extends ChangeNotifier {
     await prefs.remove('user_photo');
     await prefs.remove('user_role');
     await prefs.remove('onboarding_completed');
+    await prefs.remove('user_year');
+    await prefs.remove('user_division');
 
     notifyListeners();
   }

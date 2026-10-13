@@ -6,6 +6,8 @@ import '../models/student_settings.dart';
 import '../providers/accessibility_provider.dart';
 import '../services/tracking_service.dart';
 import 'psico_panel_screen.dart';
+import 'psico_notes_tab.dart';
+import '../widgets/activity_chart.dart';
 
 String _fmt(DateTime? date, {bool withTime = true}) {
   if (date == null) return 'Sin actividad';
@@ -103,7 +105,7 @@ class _PsicoStudentTrackingScreenState
         accessibility.isHighContrast ? Colors.yellowAccent : Colors.white;
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor:
@@ -126,6 +128,7 @@ class _PsicoStudentTrackingScreenState
               Tab(icon: Icon(Icons.insights_rounded), text: 'Resumen'),
               Tab(icon: Icon(Icons.menu_book_rounded), text: 'Por materia'),
               Tab(icon: Icon(Icons.forum_rounded), text: 'Chats'),
+              Tab(icon: Icon(Icons.sticky_note_2_rounded), text: 'Notas'),
             ],
           ),
         ),
@@ -138,6 +141,10 @@ class _PsicoStudentTrackingScreenState
                       _buildSummary(primaryColor),
                       _buildBySubject(primaryColor),
                       _buildChats(primaryColor),
+                      PsicoNotesTab(
+                        studentId: widget.studentId,
+                        primaryColor: primaryColor,
+                      ),
                     ],
                   ),
       ),
@@ -150,8 +157,9 @@ class _PsicoStudentTrackingScreenState
   Widget _buildSummary(Color primaryColor) {
     final data = _data!;
     final conditions = widget.settings.activeConditions;
+    // Materias con contenidos que el alumno no abrió, descargó ni consultó
     final unused = data.subjects
-        .where((s) => s.materials.isNotEmpty && s.chat == null)
+        .where((s) => s.materials.any((m) => !data.statsOf(m.id).used))
         .toList();
 
     Widget stat(IconData icon, String value, String label) {
@@ -222,12 +230,16 @@ class _PsicoStudentTrackingScreenState
                   'Mensajes enviados'),
               stat(Icons.forum_rounded, '${data.chats.length}',
                   'Chats abiertos'),
-              stat(Icons.assignment_rounded, '${data.totalMaterials}',
-                  'Contenidos de sus profes'),
+              stat(
+                  Icons.assignment_rounded,
+                  '${data.materialsUsed} de ${data.totalMaterials}',
+                  'Contenidos que abrió'),
               stat(Icons.schedule_rounded,
                   _fmt(data.lastActivity, withTime: false), 'Última actividad'),
             ],
           ),
+          const SizedBox(height: 16),
+          ActivityChart(days: data.days, primaryColor: primaryColor),
           const SizedBox(height: 20),
           if (_course.isEmpty)
             const Text(
@@ -239,19 +251,24 @@ class _PsicoStudentTrackingScreenState
               children: [
                 const Icon(Icons.warning_amber_rounded, color: Colors.orange),
                 const SizedBox(width: 6),
-                Text('Materias con contenidos que todavía no consultó',
+                Text('Contenidos que todavía no abrió',
                     style: TextStyle(
                         fontWeight: FontWeight.bold, color: primaryColor)),
               ],
             ),
             const SizedBox(height: 6),
-            ...unused.map((s) => ListTile(
-                  dense: true,
-                  leading: Icon(s.subject.icon, color: primaryColor),
-                  title: Text(s.subject.name),
-                  subtitle: Text(
-                      '${s.materials.length} contenido(s) · Prof. ${s.teacherName}'),
-                )),
+            ...unused.map((s) {
+              final pending =
+                  s.materials.where((m) => !data.statsOf(m.id).used).toList();
+              return ListTile(
+                dense: true,
+                leading: Icon(s.subject.icon, color: primaryColor),
+                title: Text(s.subject.name),
+                subtitle: Text(
+                    '${pending.length} de ${s.materials.length} sin abrir: '
+                    '${pending.map((m) => m.title).join(', ')}'),
+              );
+            }),
           ] else
             Row(
               children: [
@@ -259,7 +276,7 @@ class _PsicoStudentTrackingScreenState
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
-                      'Consultó el chat de todas las materias que tienen contenidos.'),
+                      'Abrió, descargó o consultó todos los contenidos publicados.'),
                 ),
               ],
             ),
@@ -336,20 +353,29 @@ class _PsicoStudentTrackingScreenState
                           style: TextStyle(color: Colors.grey)),
                     )
                   else
-                    ...s.materials.map((m) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.assignment_rounded,
-                              color: primaryColor),
-                          title: Text(m.title),
-                          subtitle: Text(
-                              'Publicado el ${_fmt(m.createdAt, withTime: false)}'),
-                          trailing: IconButton(
-                            tooltip: 'Abrir archivo',
-                            icon: const Icon(Icons.download_rounded),
-                            onPressed: () => _openFile(context, m),
+                    ...s.materials.map((m) {
+                      final st = _data!.statsOf(m.id);
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading:
+                            Icon(Icons.assignment_rounded, color: primaryColor),
+                        title: Text(m.title),
+                        subtitle: Text(
+                          'Publicado el ${_fmt(m.createdAt, withTime: false)}\n'
+                          '${st.used ? 'Descargas: ${st.downloads} · Consultas a la IA: ${st.aiQuestions} · Última: ${_fmt(st.last)}' : 'El alumno todavía no lo abrió'}',
+                          style: TextStyle(
+                            color: st.used ? null : Colors.orange.shade800,
                           ),
-                        )),
+                        ),
+                        isThreeLine: true,
+                        trailing: IconButton(
+                          tooltip: 'Abrir archivo',
+                          icon: const Icon(Icons.download_rounded),
+                          onPressed: () => _openFile(context, m),
+                        ),
+                      );
+                    }),
                   const SizedBox(height: 8),
                   Text('Cómo lo trabajó el alumno',
                       style: TextStyle(

@@ -7,6 +7,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Activa Firebase solo cuando ya descargaste google-services.json a android/app/
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.example.eduinclusiva_ia" // dejá el tuyo
     compileSdk = 36

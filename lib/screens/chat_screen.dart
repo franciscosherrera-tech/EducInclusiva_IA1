@@ -1,5 +1,6 @@
 // lib/screens/chat_screen.dart
 
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -18,6 +19,8 @@ import '../providers/accessibility_provider.dart';
 import '../services/gemini_service.dart';
 import '../services/pdf_export_service.dart';
 import '../services/chat_service.dart';
+import '../services/activity_service.dart';
+import '../utils/docx_text.dart';
 import '../widgets/sign_language_interpreter.dart';
 import 'main_navigation_screen.dart';
 
@@ -76,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
           desc: material.description ?? '',
           fileUrl: material.fileUrl,
           fileName: material.fileName,
+          materialId: material.id,
         );
       }
     });
@@ -83,21 +87,21 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Descarga el archivo del docente, lo adjunta y le pide a la IA que lo lea.
+  /// Acepta PDF, TXT y Word (.docx, del que se extrae el texto).
   Future<void> _askAboutMaterial({
     required String title,
     required String desc,
     required String? fileUrl,
     String? fileName,
+    String? materialId,
   }) async {
     final name = (fileName ?? fileUrl ?? '').toLowerCase();
-    final String mimeType =
-        name.endsWith('.txt') ? 'text/plain' : 'application/pdf';
 
-    if (name.endsWith('.doc') || name.endsWith('.docx')) {
+    if (name.endsWith('.doc')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'El Tutor IA solo puede leer archivos PDF o TXT. Descargá el archivo para verlo.'),
+              'El Tutor IA no puede leer Word antiguo (.doc). Descargá el archivo para verlo.'),
         ),
       );
       return;
@@ -105,26 +109,50 @@ class _ChatScreenState extends State<ChatScreen> {
 
     setState(() => _isLoading = true);
 
-    Uint8List? downloadedBytes;
+    Uint8List? bytes;
     if (fileUrl != null && fileUrl.isNotEmpty) {
       try {
         final res = await http.get(Uri.parse(fileUrl));
-        if (res.statusCode == 200) downloadedBytes = res.bodyBytes;
+        if (res.statusCode == 200) bytes = res.bodyBytes;
       } catch (e) {
         debugPrint('Error al descargar el archivo: $e');
       }
     }
 
+    String mimeType = name.endsWith('.txt') ? 'text/plain' : 'application/pdf';
+    String extension = name.endsWith('.txt') ? 'txt' : 'pdf';
+    String kind = name.endsWith('.txt') ? 'el texto' : 'el PDF';
+
+    if (bytes != null && name.endsWith('.docx')) {
+      final text = extractDocxText(bytes);
+      if (text == null) {
+        bytes = null;
+      } else {
+        bytes = Uint8List.fromList(utf8.encode(text));
+        mimeType = 'text/plain';
+        extension = 'txt';
+        kind = 'el documento de Word';
+      }
+    }
+
     if (!mounted) return;
     setState(() {
-      _attachedBytes = downloadedBytes;
-      _attachedMimeType = downloadedBytes != null ? mimeType : null;
-      _attachedFileName = downloadedBytes != null ? '$title.pdf' : null;
+      _attachedBytes = bytes;
+      _attachedMimeType = bytes != null ? mimeType : null;
+      _attachedFileName = bytes != null ? '$title.$extension' : null;
       _controller.text = desc.isNotEmpty
-          ? 'Lee detenidamente el PDF adjunto ("$title"). Consigna: "$desc". ¿De qué trata y por dónde empezamos?'
-          : 'Lee detenidamente el PDF adjunto ("$title"). ¿De qué trata y por dónde empezamos?';
+          ? 'Lee detenidamente $kind adjunto ("$title"). Consigna: "$desc". ¿De qué trata y por dónde empezamos?'
+          : 'Lee detenidamente $kind adjunto ("$title"). ¿De qué trata y por dónde empezamos?';
       _isLoading = false;
     });
+
+    if (materialId != null) {
+      ActivityService().log(
+        materialId: materialId,
+        subjectId: _activeSubject.id,
+        action: ActivityAction.askAi,
+      );
+    }
 
     await _sendMessage();
   }
@@ -539,17 +567,18 @@ class _ChatScreenState extends State<ChatScreen> {
               if (_activeSubject.id != 'general' &&
                   _activeSubject.id != '00000000-0000-0000-0000-000000000000')
                 Container(
-                  color: isDark ? const Color(0xFF1E232A) : Colors.teal.shade50,
+                  color: isDark
+                      ? const Color(0xFF1E232A)
+                      : primaryColor.withValues(alpha: 0.08),
                   child: ExpansionTile(
                     tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading:
-                        const Icon(Icons.folder_outlined, color: Colors.teal),
+                    leading: Icon(Icons.folder_outlined, color: primaryColor),
                     title: Text(
                       'Guías y trabajos del Profesor (${_subjectMaterials.length})',
                       style: accessibility.getTextStyle(
                         overrideSize: accessibility.fontSize * 0.85,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.teal.shade900,
+                        color: isDark ? Colors.white : primaryColor,
                       ),
                     ),
                     children: _isLoadingMaterials
@@ -592,14 +621,15 @@ class _ChatScreenState extends State<ChatScreen> {
                                       top: BorderSide(
                                         color: isDark
                                             ? Colors.white12
-                                            : Colors.teal.shade100,
+                                            : primaryColor.withValues(
+                                                alpha: 0.25),
                                       ),
                                     ),
                                   ),
                                   child: ListTile(
                                     dense: true,
-                                    leading: const Icon(Icons.menu_book,
-                                        color: Colors.teal, size: 20),
+                                    leading: Icon(Icons.menu_book,
+                                        color: primaryColor, size: 20),
                                     title: Text(
                                       title,
                                       style: accessibility.getTextStyle(
@@ -624,7 +654,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         : null,
                                     trailing: ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.teal,
+                                        backgroundColor: primaryColor,
                                         foregroundColor: Colors.white,
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 10, vertical: 4),
@@ -638,6 +668,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         desc: desc.toString(),
                                         fileUrl: fileUrl?.toString(),
                                         fileName: mat['file_name']?.toString(),
+                                        materialId: mat['id']?.toString(),
                                       ),
                                     ),
                                   ),
@@ -658,7 +689,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ? (accessibility.isHighContrast
                             ? Colors.yellowAccent
                             : (accessibility.isTeaMode
-                                ? Colors.teal.shade300
+                                ? primaryColor
                                 : primaryColor))
                         : (accessibility.isHighContrast
                             ? Colors.grey.shade900
@@ -797,13 +828,14 @@ class _ChatScreenState extends State<ChatScreen> {
                   margin:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
-                    color:
-                        isDark ? const Color(0xFF1E2E2E) : Colors.teal.shade50,
+                    color: isDark
+                        ? const Color(0xFF1E2E2E)
+                        : primaryColor.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: isDark
-                            ? Colors.teal.shade700
-                            : Colors.teal.shade200),
+                            ? primaryColor
+                            : primaryColor.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     children: [

@@ -84,7 +84,8 @@ class _TeacherSubjectDetailScreenState
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
+      // .doc (Word viejo) se excluye: el Tutor IA no puede leerlo
+      allowedExtensions: ['pdf', 'txt', 'docx'],
     );
 
     if (result != null && result.files.isNotEmpty) {
@@ -340,7 +341,7 @@ class _TeacherSubjectDetailScreenState
                       icon: const Icon(Icons.attach_file),
                       label: Text(
                         _selectedFile == null
-                            ? 'Adjuntar PDF o Documento'
+                            ? 'Adjuntar PDF, Word (.docx) o TXT'
                             : 'Archivo: ${_selectedFile!.name}',
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -408,8 +409,8 @@ class _TeacherSubjectDetailScreenState
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: CircleAvatar(
                       backgroundColor: primaryColor.withValues(alpha: 0.15),
                       child: Icon(Icons.assignment_rounded,

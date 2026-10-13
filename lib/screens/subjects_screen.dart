@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/courses.dart';
 import '../models/subject.dart';
+import '../providers/new_content_provider.dart';
 import '../providers/subject_provider.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
@@ -21,6 +22,7 @@ class SubjectsScreen extends StatefulWidget {
 
 class _SubjectsScreenState extends State<SubjectsScreen> {
   final _search = TextEditingController();
+  String _lastSignature = '';
 
   @override
   void dispose() {
@@ -170,8 +172,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     selectedDivision == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content:
-                          Text('Completa el nombre, el año y la división'),
+                      content: Text('Completa el nombre, el año y la división'),
                     ),
                   );
                   return;
@@ -230,12 +231,25 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
     // Solo las materias del curso que le asignó la psicopedagoga
     final query = _search.text.trim().toLowerCase();
-    final mySubjects = subjectProvider.subjects
+    final courseSubjects = subjectProvider.subjects
         .where((s) =>
-            s.year == userProvider.year &&
-            s.division == userProvider.division)
+            s.year == userProvider.year && s.division == userProvider.division)
+        .toList();
+    final mySubjects = courseSubjects
         .where((s) => query.isEmpty || s.name.toLowerCase().contains(query))
         .toList();
+
+    // Calcula el contenido nuevo cuando cambian las materias del curso
+    final signature = courseSubjects.map((s) => s.id).join(',');
+    if (signature != _lastSignature) {
+      _lastSignature = signature;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !isTeacher) {
+          context.read<NewContentProvider>().refresh(courseSubjects);
+        }
+      });
+    }
+    final newContent = context.watch<NewContentProvider>();
 
     final Color bgColor = accessibility.isHighContrast
         ? Colors.black
@@ -301,6 +315,36 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                 ),
               ),
             ],
+            if (newContent.totalNew > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: primaryColor.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_active_rounded,
+                        color: primaryColor),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        newContent.totalNew == 1
+                            ? 'Tenés 1 contenido nuevo: ${newContent.newTitles().join(', ')}'
+                            : 'Tenés ${newContent.totalNew} contenidos nuevos: ${newContent.newTitles().join(', ')}${newContent.totalNew > 3 ? '…' : ''}',
+                        style: accessibility.getTextStyle(
+                          overrideSize: accessibility.fontSize * 0.9,
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
 
             // --- Buscador de materias ---
@@ -327,13 +371,13 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     : Theme.of(context).cardColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                      color: primaryColor.withValues(alpha: 0.4)),
+                  borderSide:
+                      BorderSide(color: primaryColor.withValues(alpha: 0.4)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                      color: primaryColor.withValues(alpha: 0.4)),
+                  borderSide:
+                      BorderSide(color: primaryColor.withValues(alpha: 0.4)),
                 ),
               ),
             ),
@@ -493,33 +537,65 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                             end: Alignment.bottomRight,
                           ),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Stack(
                           children: [
-                            CircleAvatar(
-                              radius: 28,
-                              backgroundColor:
-                                  primaryColor.withValues(alpha: 0.2),
-                              child: Icon(
-                                subject.icon,
-                                color: accessibility.isHighContrast
-                                    ? Colors.yellowAccent
-                                    : primaryColor,
-                                size: 30,
+                            Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor:
+                                        primaryColor.withValues(alpha: 0.2),
+                                    child: Icon(
+                                      subject.icon,
+                                      color: accessibility.isHighContrast
+                                          ? Colors.yellowAccent
+                                          : primaryColor,
+                                      size: 30,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    subject.name,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: accessibility.getTextStyle(
+                                      overrideSize:
+                                          accessibility.fontSize * 0.9,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Text(
-                              subject.name,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: accessibility.getTextStyle(
-                                overrideSize: accessibility.fontSize * 0.9,
-                                fontWeight: FontWeight.bold,
-                                color: textColor,
+                            if (newContent.newCountFor(subject.id) > 0)
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: Semantics(
+                                  label:
+                                      '${newContent.newCountFor(subject.id)} contenidos nuevos',
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${newContent.newCountFor(subject.id)} nuevo${newContent.newCountFor(subject.id) == 1 ? '' : 's'}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),

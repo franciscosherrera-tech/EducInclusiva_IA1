@@ -4,6 +4,10 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Se necesita el micrófono para enviar mensajes por voz al tutor.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Se usa la cámara para adjuntar una foto de tu tarea al tutor.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Se usa la galería para adjuntar imágenes de tus tareas al tutor.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Se requiere reconocimiento de voz para convertir tu voz en texto.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

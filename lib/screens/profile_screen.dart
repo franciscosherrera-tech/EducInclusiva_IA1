@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
+import '../widgets/appearance_card.dart';
 import 'auth_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -178,7 +179,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.email,
               accessibility: accessibility,
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
+            const AppearanceCard(),
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               height: 55,

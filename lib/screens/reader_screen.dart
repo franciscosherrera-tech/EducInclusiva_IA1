@@ -11,7 +11,8 @@ class ReaderScreen extends StatefulWidget {
 class _ReaderScreenState extends State<ReaderScreen> {
   final FlutterTts _tts = FlutterTts();
   final TextEditingController _textController = TextEditingController(
-    text: 'EduInclusiva IA adapta los contenidos escolares para que todos los estudiantes aprendan a su propio ritmo con apoyo auditivo y visual.',
+    text:
+        'EduInclusiva IA adapta los contenidos escolares para que todos los estudiantes aprendan a su propio ritmo con apoyo auditivo y visual.',
   );
   bool _isSpeaking = false;
 

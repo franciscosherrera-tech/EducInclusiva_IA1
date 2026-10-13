@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import '../constants/courses.dart';
 import '../models/subject.dart';
+import '../utils/course_grouping.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/subject_provider.dart';
 import '../providers/user_provider.dart';
@@ -31,28 +32,6 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
       Provider.of<UserProvider>(context, listen: false).loadFromSupabase(),
       Provider.of<SubjectProvider>(context, listen: false).fetchSubjects(),
     ]);
-  }
-
-  /// Agrupa las materias del docente por curso ("4° 1ra", "6° 1ra", ...).
-  Map<String, List<Subject>> _groupByCourse(List<Subject> subjects) {
-    final groups = <String, List<Subject>>{};
-    for (final subject in subjects) {
-      final key = '${subject.year} ${subject.division}'.trim();
-      groups.putIfAbsent(key.isEmpty ? 'Sin curso asignado' : key, () => [])
-          .add(subject);
-    }
-
-    final sortedKeys = groups.keys.toList()
-      ..sort((a, b) {
-        final numA = int.tryParse(RegExp(r'\d+').stringMatch(a) ?? '');
-        final numB = int.tryParse(RegExp(r'\d+').stringMatch(b) ?? '');
-        if (numA != null && numB != null && numA != numB) {
-          return numA.compareTo(numB);
-        }
-        return a.compareTo(b);
-      });
-
-    return {for (final key in sortedKeys) key: groups[key]!};
   }
 
   void _showAddSubjectDialog(BuildContext context) {
@@ -193,8 +172,7 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
                     selectedDivision == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content:
-                          Text('Completa el nombre, el año y la división'),
+                      content: Text('Completa el nombre, el año y la división'),
                     ),
                   );
                   return;
@@ -242,10 +220,9 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
     final userProvider = Provider.of<UserProvider>(context);
 
     final userId = _supabase.auth.currentUser?.id;
-    final mySubjects = subjectProvider.subjects
-        .where((s) => s.teacherId == userId)
-        .toList();
-    final courses = _groupByCourse(mySubjects);
+    final mySubjects =
+        subjectProvider.subjects.where((s) => s.teacherId == userId).toList();
+    final courses = groupByCourse(mySubjects);
 
     final Color primaryColor = accessibility.activePrimaryColor;
     final Color bgColor = accessibility.isHighContrast

@@ -4,6 +4,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/material_model.dart';
 import '../models/subject.dart';
 import '../providers/accessibility_provider.dart';
+import '../providers/new_content_provider.dart';
+import 'package:open_filex/open_filex.dart';
+import '../services/activity_service.dart';
+import '../services/material_cache.dart';
 import '../services/material_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/profile_avatar_button.dart';
@@ -25,6 +29,10 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
 
   bool _isLoading = true;
   List<StudyMaterial> _materials = [];
+  final Set<String> _newIds = {};
+  final MaterialCache _cache = MaterialCache();
+  Set<String> _cachedIds = {};
+  bool _offline = false;
 
   @override
   void initState() {
@@ -43,7 +51,17 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
     try {
       final materials =
           await _materialService.getMaterialsBySubject(widget.subject.id);
-      if (mounted) setState(() => _materials = materials);
+      if (!mounted) return;
+      final newContent = context.read<NewContentProvider>();
+      // Guardamos cuáles eran nuevos antes de marcarlos como vistos
+      _newIds.addAll(
+          materials.map((m) => m.id).where((id) => newContent.isNew(id)));
+      setState(() {
+        _materials = materials;
+        _offline = MaterialService.lastLoadWasOffline;
+      });
+      newContent.markSeen(materials.map((m) => m.id));
+      _refreshCached();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -55,14 +73,51 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
     }
   }
 
+  Future<void> _refreshCached() async {
+    final cached = <String>{};
+    for (final m in _materials) {
+      if (await _cache.isCached(m)) cached.add(m.id);
+    }
+    if (mounted) setState(() => _cachedIds = cached);
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// Abre el archivo desde el teléfono; si todavía no está, lo descarga primero
+  /// (así queda disponible sin conexión).
   Future<void> _download(StudyMaterial material) async {
-    final uri = Uri.tryParse(material.fileUrl);
-    final opened = uri != null &&
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo abrir el archivo.')),
+    try {
+      var file = await _cache.cachedFile(material);
+      if (file == null) {
+        _showMessage('Descargando...');
+        file = await _cache.download(material);
+        await _refreshCached();
+      }
+
+      final result = await OpenFilex.open(file.path);
+      if (result.type == ResultType.noAppToOpen) {
+        // Sin app para ese tipo de archivo: lo abrimos desde el navegador
+        final uri = Uri.tryParse(material.fileUrl);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } else if (result.type != ResultType.done) {
+        _showMessage('No se pudo abrir el archivo.');
+        return;
+      }
+
+      ActivityService().log(
+        materialId: material.id,
+        subjectId: widget.subject.id,
+        action: ActivityAction.download,
       );
+    } catch (e) {
+      debugPrint('Error al abrir/descargar: $e');
+      _showMessage(
+          'Sin conexión: este archivo todavía no está guardado en tu teléfono.');
     }
   }
 
@@ -139,6 +194,32 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (_offline) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off_rounded, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Sin conexión: se muestra lo último que guardaste. Los archivos ya descargados se pueden abrir igual.',
+                        style: accessibility.getTextStyle(
+                          overrideSize: accessibility.fontSize * 0.8,
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // --- Buscador desplegable de contenidos ---
             TextField(
               controller: _search,
@@ -244,8 +325,8 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(
-                        color: primaryColor.withValues(alpha: 0.3)),
+                    side:
+                        BorderSide(color: primaryColor.withValues(alpha: 0.3)),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -267,15 +348,41 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    material.title,
-                                    style: accessibility.getTextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
-                                    ),
+                                  Wrap(
+                                    spacing: 8,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        material.title,
+                                        style: accessibility.getTextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: textColor,
+                                        ),
+                                      ),
+                                      if (_newIds.contains(material.id))
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.redAccent,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          child: const Text(
+                                            'NUEVO',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                   Text(
-                                    'Publicado el ${_formatDate(material.createdAt)}',
+                                    'Publicado el ${_formatDate(material.createdAt)}'
+                                    '${_cachedIds.contains(material.id) ? ' · Disponible sin conexión' : ''}',
                                     style: accessibility.getTextStyle(
                                       overrideSize:
                                           accessibility.fontSize * 0.75,
@@ -310,7 +417,9 @@ class _StudentSubjectScreenState extends State<StudentSubjectScreen> {
                                 side: BorderSide(color: primaryColor),
                               ),
                               icon: const Icon(Icons.download_rounded),
-                              label: const Text('Descargar'),
+                              label: Text(_cachedIds.contains(material.id)
+                                  ? 'Abrir'
+                                  : 'Descargar'),
                             ),
                             ElevatedButton.icon(
                               onPressed: () => _openChat(material: material),

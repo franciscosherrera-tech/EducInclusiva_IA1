@@ -102,7 +102,7 @@ class _PsicoGateDialogState extends State<_PsicoGateDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Row(
         children: [
-          Icon(Icons.lock_person_outlined, color: Colors.teal),
+          Icon(Icons.lock_person_outlined),
           SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -163,7 +163,7 @@ class _PsicoGateDialogState extends State<_PsicoGateDialog> {
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.teal,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Colors.white,
           ),
           onPressed: _isLoading ? null : _submit,

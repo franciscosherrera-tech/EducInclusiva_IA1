@@ -39,8 +39,7 @@ class _PsicoStudentSettingsScreenState
   @override
   void initState() {
     super.initState();
-    _settings =
-        widget.settings ?? StudentSettings(studentId: widget.studentId);
+    _settings = widget.settings ?? StudentSettings(studentId: widget.studentId);
     // Solo aceptamos valores que existan en las listas fijas
     _year = Courses.years.contains(widget.year) ? widget.year : null;
     _division =
@@ -146,8 +145,8 @@ class _PsicoStudentSettingsScreenState
                         border: OutlineInputBorder(),
                       ),
                       items: Courses.years
-                          .map((y) =>
-                              DropdownMenuItem(value: y, child: Text(y)))
+                          .map(
+                              (y) => DropdownMenuItem(value: y, child: Text(y)))
                           .toList(),
                       onChanged: (v) => setState(() => _year = v),
                     ),
@@ -161,8 +160,8 @@ class _PsicoStudentSettingsScreenState
                         border: OutlineInputBorder(),
                       ),
                       items: Courses.divisions
-                          .map((d) =>
-                              DropdownMenuItem(value: d, child: Text(d)))
+                          .map(
+                              (d) => DropdownMenuItem(value: d, child: Text(d)))
                           .toList(),
                       onChanged: (v) => setState(() => _division = v),
                     ),
@@ -228,11 +227,11 @@ class _PsicoStudentSettingsScreenState
                   border: OutlineInputBorder(),
                 ),
                 items: ColorBlindType.values
-                    .map((t) =>
-                        DropdownMenuItem(value: t, child: Text(t.label)))
+                    .map(
+                        (t) => DropdownMenuItem(value: t, child: Text(t.label)))
                     .toList(),
-                onChanged: (t) => setState(() => _settings = _settings
-                    .copyWith(colorBlindness: t ?? ColorBlindType.none)),
+                onChanged: (t) => setState(() => _settings = _settings.copyWith(
+                    colorBlindness: t ?? ColorBlindType.none)),
               ),
             ),
             if (_settings.colorBlindness != ColorBlindType.none)
@@ -300,8 +299,8 @@ class _PsicoStudentSettingsScreenState
             ? SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: onPrimary),
+                child:
+                    CircularProgressIndicator(strokeWidth: 2, color: onPrimary),
               )
             : const Icon(Icons.save_rounded),
         label: const Text('Guardar perfil'),

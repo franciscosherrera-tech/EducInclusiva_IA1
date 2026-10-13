@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/student_settings.dart';
 import '../services/student_settings_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 
-class AccessibilityProvider extends ChangeNotifier {
+class AccessibilityProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _fontSize = 16.0;
   bool _isTeaMode = false;
   bool _autoReadText = false;
@@ -48,16 +50,76 @@ class AccessibilityProvider extends ChangeNotifier {
   Color get activePrimaryColor {
     if (_isHighContrast) return Colors.yellowAccent;
     if (_isColorBlindMode) {
-      // Rojo-verde: el azul se distingue bien. Azul-amarillo: usamos un rosa
-      // intenso, que contrasta con los tonos que se confunden.
-      if (_colorBlindType.isBlueYellow) return const Color(0xFFC2185B);
-      return Colors.blue.shade700;
+      // Con daltonismo solo valen los colores de la paleta segura; si el elegido
+      // no lo es, usamos un azul que se distingue en todos los tipos.
+      final safe = AppColors.colorBlindSafePalette
+          .any((c) => c.toARGB32() == _customColor.toARGB32());
+      final base = safe ? _customColor : const Color(0xFF0072B2);
+      return _isDarkNow ? AppTheme.forDarkSurface(base) : base;
     }
-    return _customColor;
+    return _isDarkNow ? AppTheme.forDarkSurface(_customColor) : _customColor;
   }
 
+  /// Colores que este usuario puede elegir (más acotados si tiene daltonismo).
+  List<Color> get availableColors => _isColorBlindMode
+      ? AppColors.colorBlindSafePalette
+      : AppColors.themePalette;
+
+  bool get _isDarkNow =>
+      _themeMode == ThemeMode.dark ||
+      (_themeMode == ThemeMode.system &&
+          WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+              Brightness.dark);
+
   AccessibilityProvider() {
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+    // Cada usuario tiene su propio color y tema: se recargan al cambiar de sesión
+    try {
+      _authSub = Supabase.instance.client.auth.onAuthStateChange
+          .listen((_) => _loadAppearance());
+    } catch (_) {
+      // Supabase sin inicializar (por ejemplo en las pruebas)
+    }
+  }
+
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void didChangePlatformBrightness() {
+    // Si el tema sigue al sistema, hay que repintar cuando el teléfono cambia
+    if (_themeMode == ThemeMode.system) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  /// Las preferencias de apariencia se guardan por usuario, para que varias
+  /// cuentas en el mismo teléfono no se pisen.
+  String _appearanceKey(String base) {
+    String? uid;
+    try {
+      uid = Supabase.instance.client.auth.currentUser?.id;
+    } catch (_) {}
+    return uid == null ? base : '${base}_$uid';
+  }
+
+  Future<void> _loadAppearance() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedColor = prefs.getInt(_appearanceKey('customColor')) ??
+        prefs.getInt('customColor');
+    _customColor = savedColor != null ? Color(savedColor) : AppColors.darkBlue;
+
+    final savedThemeIndex =
+        prefs.getInt(_appearanceKey('themeMode')) ?? prefs.getInt('themeMode');
+    _themeMode = savedThemeIndex != null
+        ? ThemeMode.values[savedThemeIndex]
+        : ThemeMode.system;
+    notifyListeners();
   }
 
   Future<void> _loadSettings() async {
@@ -76,32 +138,21 @@ class AccessibilityProvider extends ChangeNotifier {
     _hasDyscalculia = prefs.getBool('hasDyscalculia') ?? false;
     _colorBlindType =
         ColorBlindType.fromCode(prefs.getString('colorBlindType'));
-
-    final savedColor = prefs.getInt('customColor');
-    if (savedColor != null) {
-      _customColor = Color(savedColor);
-    }
-
-    final savedThemeIndex = prefs.getInt('themeMode');
-    if (savedThemeIndex != null) {
-      _themeMode = ThemeMode.values[savedThemeIndex];
-    }
-
-    notifyListeners();
+    await _loadAppearance();
   }
 
   void setCustomColor(Color color) async {
     _customColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('customColor', color.value);
+    prefs.setInt(_appearanceKey('customColor'), color.toARGB32());
   }
 
   void setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('themeMode', mode.index);
+    prefs.setInt(_appearanceKey('themeMode'), mode.index);
   }
 
   void setFontSize(double size) async {

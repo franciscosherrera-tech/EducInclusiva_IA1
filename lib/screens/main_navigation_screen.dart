@@ -55,12 +55,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school, color: Colors.teal),
+            selectedIcon: Icon(Icons.school),
             label: 'Materias',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings, color: Colors.teal),
+            selectedIcon: Icon(Icons.settings),
             label: 'Ajustes',
           ),
         ],
