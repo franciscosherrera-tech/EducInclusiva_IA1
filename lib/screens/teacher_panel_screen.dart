@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
-import '../constants/courses.dart';
 import '../models/subject.dart';
 import '../utils/course_grouping.dart';
 import '../providers/accessibility_provider.dart';
@@ -34,185 +33,6 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
     ]);
   }
 
-  void _showAddSubjectDialog(BuildContext context) {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    String? selectedYear;
-    String? selectedDivision;
-
-    IconData selectedIcon = Icons.school;
-
-    final primaryColor =
-        Provider.of<AccessibilityProvider>(context, listen: false)
-            .activePrimaryColor;
-
-    final availableIcons = [
-      Icons.school,
-      Icons.book,
-      Icons.calculate,
-      Icons.science,
-      Icons.palette,
-      Icons.computer,
-      Icons.fitness_center,
-      Icons.biotech,
-      Icons.public,
-      Icons.history_edu,
-    ];
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setStateModal) => AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
-          title: Text(
-            'Crear Nueva Materia',
-            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la Materia',
-                    hintText: 'Ej. Matemáticas, Robótica',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: selectedYear,
-                        decoration: const InputDecoration(labelText: 'Año'),
-                        items: Courses.years
-                            .map((y) =>
-                                DropdownMenuItem(value: y, child: Text(y)))
-                            .toList(),
-                        onChanged: (val) =>
-                            setStateModal(() => selectedYear = val),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: selectedDivision,
-                        decoration:
-                            const InputDecoration(labelText: 'División'),
-                        items: Courses.divisions
-                            .map((d) =>
-                                DropdownMenuItem(value: d, child: Text(d)))
-                            .toList(),
-                        onChanged: (val) =>
-                            setStateModal(() => selectedDivision = val),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción (opcional)',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Elige un ícono:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: availableIcons.map((icon) {
-                    final isSelected = selectedIcon == icon;
-                    return InkWell(
-                      onTap: () => setStateModal(() => selectedIcon = icon),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? primaryColor.withValues(alpha: 0.2)
-                              : Colors.grey.shade200,
-                          shape: BoxShape.circle,
-                          border: isSelected
-                              ? Border.all(color: primaryColor, width: 2)
-                              : null,
-                        ),
-                        child: Icon(
-                          icon,
-                          color: isSelected ? primaryColor : Colors.black87,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                final name = nameController.text.trim();
-                if (name.isEmpty ||
-                    selectedYear == null ||
-                    selectedDivision == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Completa el nombre, el año y la división'),
-                    ),
-                  );
-                  return;
-                }
-
-                final newSub = Subject(
-                  id: '',
-                  name: name,
-                  year: selectedYear!,
-                  division: selectedDivision!,
-                  iconCode: selectedIcon.codePoint,
-                  colorValue: primaryColor.toARGB32(),
-                  description: descController.text.trim(),
-                );
-
-                try {
-                  await Provider.of<SubjectProvider>(context, listen: false)
-                      .addSubject(newSub);
-                  if (context.mounted) {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Materia creada con éxito')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error al crear materia: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final accessibility = Provider.of<AccessibilityProvider>(context);
@@ -233,8 +53,6 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
         : (Theme.of(context).brightness == Brightness.dark
             ? Colors.white
             : AppColors.darkBlue);
-    final Color onPrimary =
-        accessibility.isHighContrast ? Colors.black : Colors.white;
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -284,7 +102,7 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 80),
                       child: Text(
-                        'Todavía no tenés materias asignadas.\n\nUsá el botón "Nueva Materia" para agregar una.',
+                        'Todavía no tenés materias asignadas.\n\nLa psicopedagoga te las asigna desde su panel.',
                         textAlign: TextAlign.center,
                         style: accessibility.getTextStyle(
                           color: textColor.withValues(alpha: 0.6),
@@ -322,18 +140,6 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
                     ],
                 ],
               ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddSubjectDialog(context),
-        backgroundColor: primaryColor,
-        icon: Icon(Icons.add, color: onPrimary),
-        label: Text(
-          'Nueva Materia',
-          style: accessibility.getTextStyle(
-            color: onPrimary,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
       ),
     );
   }
