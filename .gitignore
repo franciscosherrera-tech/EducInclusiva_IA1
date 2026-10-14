@@ -52,3 +52,6 @@ app.*.map.json
 supabase/.env
 supabase/.temp/
 android/app/google-services.json
+
+# Resumen del código generado con Repopack (contiene todo el código)
+repopack-output.txt
