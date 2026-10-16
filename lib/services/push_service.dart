@@ -33,6 +33,29 @@ class PushService {
   final _foreground = StreamController<RemoteMessage>.broadcast();
   Stream<RemoteMessage> get onForegroundMessage => _foreground.stream;
 
+  /// Materia de la notificación que el usuario tocó y todavía no se abrió.
+  String? _pendingSubjectId;
+
+  final _opened = StreamController<void>.broadcast();
+
+  /// Avisa cuando el usuario toca una notificación con la app en segundo plano.
+  Stream<void> get onNotificationOpened => _opened.stream;
+
+  /// Devuelve (y borra) la materia de la última notificación tocada.
+  String? takePendingSubject() {
+    final id = _pendingSubjectId;
+    _pendingSubjectId = null;
+    return id;
+  }
+
+  void _handleOpened(RemoteMessage message) {
+    final id = message.data['subject_id'];
+    if (id is String && id.isNotEmpty) {
+      _pendingSubjectId = id;
+      _opened.add(null);
+    }
+  }
+
   /// Inicia Firebase, pide el permiso y deja escuchando los mensajes.
   Future<void> init() async {
     if (kIsWeb) return;
@@ -47,6 +70,11 @@ class PushService {
 
       messaging.onTokenRefresh.listen(_tokenRefresh.add);
       FirebaseMessaging.onMessage.listen(_foreground.add);
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleOpened);
+
+      // La app estaba cerrada y se abrió tocando una notificación
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) _handleOpened(initial);
 
       _available = true;
     } catch (e) {

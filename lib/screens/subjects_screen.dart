@@ -1,5 +1,6 @@
 // lib/screens/subjects_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/courses.dart';
@@ -8,6 +9,7 @@ import '../providers/new_content_provider.dart';
 import '../providers/subject_provider.dart';
 import '../providers/accessibility_provider.dart';
 import '../providers/user_provider.dart';
+import '../services/push_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/profile_avatar_button.dart';
 import 'chat_screen.dart';
@@ -23,11 +25,50 @@ class SubjectsScreen extends StatefulWidget {
 class _SubjectsScreenState extends State<SubjectsScreen> {
   final _search = TextEditingController();
   String _lastSignature = '';
+  StreamSubscription<void>? _openedSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _openedSub = PushService.instance.onNotificationOpened
+        .listen((_) => _openNotificationSubject());
+    // Caso: la app estaba cerrada y se abrió desde una notificación
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _openNotificationSubject());
+  }
 
   @override
   void dispose() {
+    _openedSub?.cancel();
     _search.dispose();
     super.dispose();
+  }
+
+  /// Abre la materia de la notificación que tocó el usuario.
+  Future<void> _openNotificationSubject() async {
+    final id = PushService.instance.takePendingSubject();
+    if (id == null || !mounted) return;
+
+    final provider = context.read<SubjectProvider>();
+    Subject? find() {
+      for (final s in provider.subjects) {
+        if (s.id == id) return s;
+      }
+      return null;
+    }
+
+    var subject = find();
+    if (subject == null) {
+      await provider.fetchSubjects();
+      if (!mounted) return;
+      subject = find();
+    }
+    if (subject == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => StudentSubjectScreen(subject: subject!)),
+    );
   }
 
   /// Vuelve a traer el curso asignado, el perfil de accesibilidad y las materias.

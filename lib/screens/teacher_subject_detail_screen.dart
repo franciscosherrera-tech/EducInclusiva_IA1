@@ -85,7 +85,7 @@ class _TeacherSubjectDetailScreenState
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       // .doc (Word viejo) se excluye: el Tutor IA no puede leerlo
-      allowedExtensions: ['pdf', 'txt', 'docx'],
+      allowedExtensions: ['pdf', 'txt', 'docx', 'pptx'],
     );
 
     if (result != null && result.files.isNotEmpty) {
@@ -341,7 +341,7 @@ class _TeacherSubjectDetailScreenState
                       icon: const Icon(Icons.attach_file),
                       label: Text(
                         _selectedFile == null
-                            ? 'Adjuntar PDF, Word (.docx) o TXT'
+                            ? 'Adjuntar PDF, Word, PowerPoint o TXT'
                             : 'Archivo: ${_selectedFile!.name}',
                         overflow: TextOverflow.ellipsis,
                       ),

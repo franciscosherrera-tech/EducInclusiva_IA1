@@ -92,19 +92,19 @@ un aviso en la barra de notificaciones, aunque tengan la app cerrada.
 ## 🚀 Cómo correrla
 
 **Requisitos:** [Flutter](https://docs.flutter.dev/get-started/install) 3.x, un proyecto de Supabase
-y una clave de la API de Gemini.
+y un proyecto de Supabase (la clave de Gemini vive como secreto en la función `gemini-proxy`, ver `docs/GUIA_CLAVE_GEMINI.md`).
 
 ```bash
 git clone https://github.com/franciscosherrera-tech/EducInclusiva_IA1.git
 cd EducInclusiva_IA1
 flutter pub get
-flutter run --dart-define=GEMINI_KEY=tu_clave_de_gemini
+flutter run
 ```
 
 **Generar el APK para instalar en un celular:**
 
 ```bash
-flutter build apk --release --no-tree-shake-icons --dart-define=GEMINI_KEY=tu_clave_de_gemini
+flutter build apk --release --no-tree-shake-icons
 ```
 
 > `--no-tree-shake-icons` es necesario porque los íconos de las materias se guardan como número en la base de datos.

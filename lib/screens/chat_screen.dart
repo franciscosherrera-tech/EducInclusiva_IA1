@@ -87,7 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Descarga el archivo del docente, lo adjunta y le pide a la IA que lo lea.
-  /// Acepta PDF, TXT y Word (.docx, del que se extrae el texto).
+  /// Acepta PDF, TXT, Word (.docx) y PowerPoint (.pptx); de estos se extrae el texto.
   Future<void> _askAboutMaterial({
     required String title,
     required String desc,
@@ -97,11 +97,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }) async {
     final name = (fileName ?? fileUrl ?? '').toLowerCase();
 
-    if (name.endsWith('.doc')) {
+    if (name.endsWith('.doc') || name.endsWith('.ppt')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'El Tutor IA no puede leer Word antiguo (.doc). Descargá el archivo para verlo.'),
+              'El Tutor IA no puede leer Word ni PowerPoint antiguos (.doc, .ppt). Descargá el archivo para verlo.'),
         ),
       );
       return;
@@ -123,15 +123,17 @@ class _ChatScreenState extends State<ChatScreen> {
     String extension = name.endsWith('.txt') ? 'txt' : 'pdf';
     String kind = name.endsWith('.txt') ? 'el texto' : 'el PDF';
 
-    if (bytes != null && name.endsWith('.docx')) {
-      final text = extractDocxText(bytes);
+    final isOffice = name.endsWith('.docx') || name.endsWith('.pptx');
+    if (bytes != null && isOffice) {
+      final text = extractOfficeText(bytes, name.split('.').last);
       if (text == null) {
         bytes = null;
       } else {
         bytes = Uint8List.fromList(utf8.encode(text));
         mimeType = 'text/plain';
         extension = 'txt';
-        kind = 'el documento de Word';
+        kind =
+            name.endsWith('.pptx') ? 'la presentación' : 'el documento de Word';
       }
     }
 
@@ -319,7 +321,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickDocument() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'docx', 'doc'],
+      allowedExtensions: ['pdf', 'txt', 'docx', 'pptx', 'doc', 'ppt'],
       withData: true,
     );
 
@@ -327,12 +329,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final file = result.files.single;
       final ext = (file.extension ?? '').toLowerCase();
 
-      if (ext == 'doc') {
+      if (ext == 'doc' || ext == 'ppt') {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'El Tutor IA no puede leer Word antiguo (.doc). Guardalo como .docx o PDF e intentá de nuevo.'),
+                'El Tutor IA no puede leer Word ni PowerPoint antiguos (.doc, .ppt). Guardalo como .docx, .pptx o PDF e intentá de nuevo.'),
           ),
         );
         return;
@@ -344,20 +346,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (ext == 'txt') {
         mime = 'text/plain';
-      } else if (ext == 'docx') {
-        // Gemini no lee .docx: se le manda el texto extraído
-        final text = extractDocxText(bytes);
+      } else if (ext == 'docx' || ext == 'pptx') {
+        // Gemini no lee Office: se le manda el texto extraído
+        final text = extractOfficeText(bytes, ext);
         if (text == null) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('No pude leer el texto de ese documento.')),
+                content: Text('No pude leer el texto de ese archivo.')),
           );
           return;
         }
         bytes = Uint8List.fromList(utf8.encode(text));
         mime = 'text/plain';
-        name = '${name.substring(0, name.length - 5)}.txt';
+        name = '${name.substring(0, name.length - ext.length - 1)}.txt';
       }
 
       setState(() {
@@ -466,7 +468,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             ListTile(
               leading: Icon(Icons.picture_as_pdf, color: primaryColor),
-              title: const Text('Adjuntar Documento (PDF/Word/TXT)'),
+              title: const Text('Adjuntar Documento (PDF/Word/PowerPoint/TXT)'),
               onTap: () {
                 Navigator.pop(context);
                 _pickDocument();

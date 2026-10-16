@@ -1,28 +1,17 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 
 class GeminiService {
-  static const String _defaultKey = String.fromEnvironment(
-    'GEMINI_KEY',
-    defaultValue: 'AQ.Ab8RN6LpFwcHKkY6Q1oeZxtpbIwxrpzPJxlHmJgwsGO8TX3lZQ',
-  );
-
   final http.Client _client;
   final String? Function() _tokenProvider;
-  final String _apiKey;
 
-  /// [client], [tokenProvider] y [apiKey] solo se pasan en las pruebas.
-  GeminiService({
-    http.Client? client,
-    String? Function()? tokenProvider,
-    String? apiKey,
-  })  : _client = client ?? http.Client(),
-        _tokenProvider = tokenProvider ?? _sessionToken,
-        _apiKey = apiKey ?? _defaultKey;
+  /// [client] y [tokenProvider] solo se pasan en las pruebas.
+  GeminiService({http.Client? client, String? Function()? tokenProvider})
+      : _client = client ?? http.Client(),
+        _tokenProvider = tokenProvider ?? _sessionToken;
 
   static String? _sessionToken() {
     try {
@@ -32,41 +21,17 @@ class GeminiService {
     }
   }
 
-  /// Llama a Gemini. Primero por la función `gemini-proxy` de Supabase, donde
-  /// vive la clave. Si la función todavía no está desplegada, usa la clave
-  /// guardada en la app (respaldo temporal hasta completar la migración).
-  Future<http.Response> _post(String modelo, String body) async {
-    final token = _tokenProvider();
-    if (token != null) {
-      final res = await _client
-          .post(
-            Uri.parse(
-                '${SupabaseConfig.url}/functions/v1/gemini-proxy?model=$modelo'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-              'apikey': SupabaseConfig.anonKey,
-            },
-            body: body,
-          )
-          .timeout(const Duration(seconds: 60));
-      // Solo nuestra función pone este encabezado
-      if (res.headers['x-proxy'] == 'gemini') return res;
-      debugPrint(
-          'gemini-proxy no disponible (${res.statusCode}), uso respaldo');
-    }
-
-    if (_apiKey.isEmpty) {
-      return http.Response('{"error":"sin clave de Gemini"}', 403);
-    }
+  /// Llama a Gemini a través de la función `gemini-proxy` de Supabase, donde
+  /// vive la clave. La app nunca la tiene.
+  Future<http.Response> _post(String modelo, String body, String token) {
     return _client
         .post(
           Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$modelo:generateContent',
-          ),
+              '${SupabaseConfig.url}/functions/v1/gemini-proxy?model=$modelo'),
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': _apiKey,
+            'Authorization': 'Bearer $token',
+            'apikey': SupabaseConfig.anonKey,
           },
           body: body,
         )
@@ -135,11 +100,8 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
     bool isTeaMode = false,
     String profileInstructions = '',
   }) async {
-    // Hace falta una sesión (la clave vive en el servidor) o, mientras dure la
-    // migración, la clave guardada en la app.
-    final hasFallbackKey =
-        _apiKey.isNotEmpty && _apiKey != 'PEGA_AQUI_TU_CLAVE';
-    if (_tokenProvider() == null && !hasFallbackKey) {
+    final token = _tokenProvider();
+    if (token == null) {
       return 'Error de configuración de la IA: iniciá sesión para usar el tutor.';
     }
 
@@ -192,7 +154,7 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
     for (final modelo in _modelos) {
       for (int intento = 1; intento <= _intentosPorModelo; intento++) {
         try {
-          final response = await _post(modelo, body);
+          final response = await _post(modelo, body, token);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(utf8.decode(response.bodyBytes));
