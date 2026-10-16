@@ -87,7 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Descarga el archivo del docente, lo adjunta y le pide a la IA que lo lea.
-  /// Acepta PDF, TXT, Word (.docx) y PowerPoint (.pptx); de estos se extrae el texto.
+  /// Acepta PDF, TXT, Word, PowerPoint y Excel (formatos nuevos); de estos se extrae el texto.
   Future<void> _askAboutMaterial({
     required String title,
     required String desc,
@@ -97,11 +97,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }) async {
     final name = (fileName ?? fileUrl ?? '').toLowerCase();
 
-    if (name.endsWith('.doc') || name.endsWith('.ppt')) {
+    if (name.endsWith('.doc') ||
+        name.endsWith('.ppt') ||
+        name.endsWith('.xls')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'El Tutor IA no puede leer Word ni PowerPoint antiguos (.doc, .ppt). Descargá el archivo para verlo.'),
+              'El Tutor IA no puede leer Word, PowerPoint ni Excel antiguos (.doc, .ppt, .xls). Descargá el archivo para verlo.'),
         ),
       );
       return;
@@ -123,7 +125,9 @@ class _ChatScreenState extends State<ChatScreen> {
     String extension = name.endsWith('.txt') ? 'txt' : 'pdf';
     String kind = name.endsWith('.txt') ? 'el texto' : 'el PDF';
 
-    final isOffice = name.endsWith('.docx') || name.endsWith('.pptx');
+    final isOffice = name.endsWith('.docx') ||
+        name.endsWith('.pptx') ||
+        name.endsWith('.xlsx');
     if (bytes != null && isOffice) {
       final text = extractOfficeText(bytes, name.split('.').last);
       if (text == null) {
@@ -321,7 +325,16 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickDocument() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'docx', 'pptx', 'doc', 'ppt'],
+      allowedExtensions: [
+        'pdf',
+        'txt',
+        'docx',
+        'pptx',
+        'xlsx',
+        'doc',
+        'ppt',
+        'xls'
+      ],
       withData: true,
     );
 
@@ -329,12 +342,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final file = result.files.single;
       final ext = (file.extension ?? '').toLowerCase();
 
-      if (ext == 'doc' || ext == 'ppt') {
+      if (ext == 'doc' || ext == 'ppt' || ext == 'xls') {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'El Tutor IA no puede leer Word ni PowerPoint antiguos (.doc, .ppt). Guardalo como .docx, .pptx o PDF e intentá de nuevo.'),
+                'El Tutor IA no puede leer Word, PowerPoint ni Excel antiguos (.doc, .ppt, .xls). Guardalo en el formato nuevo (.docx, .pptx, .xlsx) o como PDF e intentá de nuevo.'),
           ),
         );
         return;
@@ -346,7 +359,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (ext == 'txt') {
         mime = 'text/plain';
-      } else if (ext == 'docx' || ext == 'pptx') {
+      } else if (ext == 'docx' || ext == 'pptx' || ext == 'xlsx') {
         // Gemini no lee Office: se le manda el texto extraído
         final text = extractOfficeText(bytes, ext);
         if (text == null) {
@@ -468,7 +481,8 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             ListTile(
               leading: Icon(Icons.picture_as_pdf, color: primaryColor),
-              title: const Text('Adjuntar Documento (PDF/Word/PowerPoint/TXT)'),
+              title: const Text(
+                  'Adjuntar Documento (PDF/Word/PowerPoint/Excel/TXT)'),
               onTap: () {
                 Navigator.pop(context);
                 _pickDocument();

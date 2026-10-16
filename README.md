@@ -171,3 +171,7 @@ test/             pruebas automáticas
 Hecho con 💜 para que **todos** puedan aprender.
 
 </div>
+
+## Licencia
+
+MIT, ver [LICENSE](LICENSE).
