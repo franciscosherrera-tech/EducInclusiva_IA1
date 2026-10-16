@@ -47,6 +47,13 @@ class UserProvider extends ChangeNotifier {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
     try {
+      // Varios teléfonos por usuario (alertas_y_dispositivos.sql)
+      await _supabase.rpc('register_device_token', params: {'p_token': token});
+    } catch (e) {
+      debugPrint('No se pudo registrar el dispositivo: $e');
+    }
+    try {
+      // Columna anterior, mientras haya apps viejas o falte ejecutar el SQL
       await _supabase
           .from('profiles')
           .update({'fcm_token': token}).eq('id', user.id);
@@ -200,6 +207,13 @@ class UserProvider extends ChangeNotifier {
     // Este teléfono deja de recibir avisos de la cuenta que se cierra
     final user = _supabase.auth.currentUser;
     if (user != null) {
+      final token = await PushService.instance.getToken();
+      if (token != null) {
+        try {
+          await _supabase
+              .rpc('unregister_device_token', params: {'p_token': token});
+        } catch (_) {}
+      }
       try {
         await _supabase
             .from('profiles')

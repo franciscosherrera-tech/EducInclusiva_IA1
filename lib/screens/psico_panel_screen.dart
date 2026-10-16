@@ -9,6 +9,7 @@ import '../providers/user_provider.dart';
 import '../services/student_settings_service.dart';
 import '../widgets/profile_avatar_button.dart';
 import 'auth_screen.dart';
+import 'psico_alerts_tab.dart';
 import 'psico_materials_tab.dart';
 import 'psico_subjects_tab.dart';
 import 'psico_student_settings_screen.dart';
@@ -153,7 +154,7 @@ class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
         : Icon(Icons.remove, color: Colors.grey.shade400, size: 18);
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor:
@@ -168,6 +169,9 @@ class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
               Tab(icon: Icon(Icons.groups_rounded), text: 'Alumnos'),
               Tab(icon: Icon(Icons.folder_copy_rounded), text: 'Materiales'),
               Tab(icon: Icon(Icons.menu_book_rounded), text: 'Materias'),
+              Tab(
+                  icon: Icon(Icons.notifications_active_rounded),
+                  text: 'Alertas'),
             ],
           ),
           actions: [
@@ -381,6 +385,7 @@ class _PsicoPanelScreenState extends State<PsicoPanelScreen> {
             ),
             PsicoMaterialsTab(primaryColor: primaryColor),
             PsicoSubjectsTab(primaryColor: primaryColor),
+            PsicoAlertsTab(primaryColor: primaryColor),
           ],
         ),
       ),
