@@ -319,19 +319,51 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickDocument() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt'],
+      allowedExtensions: ['pdf', 'txt', 'docx', 'doc'],
       withData: true,
     );
 
     if (result != null && result.files.single.bytes != null) {
       final file = result.files.single;
-      String mime = 'application/pdf';
-      if (file.extension == 'txt') mime = 'text/plain';
+      final ext = (file.extension ?? '').toLowerCase();
+
+      if (ext == 'doc') {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'El Tutor IA no puede leer Word antiguo (.doc). Guardalo como .docx o PDF e intentá de nuevo.'),
+          ),
+        );
+        return;
+      }
+
+      var bytes = file.bytes!;
+      var name = file.name;
+      var mime = 'application/pdf';
+
+      if (ext == 'txt') {
+        mime = 'text/plain';
+      } else if (ext == 'docx') {
+        // Gemini no lee .docx: se le manda el texto extraído
+        final text = extractDocxText(bytes);
+        if (text == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No pude leer el texto de ese documento.')),
+          );
+          return;
+        }
+        bytes = Uint8List.fromList(utf8.encode(text));
+        mime = 'text/plain';
+        name = '${name.substring(0, name.length - 5)}.txt';
+      }
 
       setState(() {
-        _attachedBytes = file.bytes;
+        _attachedBytes = bytes;
         _attachedMimeType = mime;
-        _attachedFileName = file.name;
+        _attachedFileName = name;
       });
     }
   }
@@ -434,7 +466,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             ListTile(
               leading: Icon(Icons.picture_as_pdf, color: primaryColor),
-              title: const Text('Adjuntar Documento (PDF/TXT)'),
+              title: const Text('Adjuntar Documento (PDF/Word/TXT)'),
               onTap: () {
                 Navigator.pop(context);
                 _pickDocument();
