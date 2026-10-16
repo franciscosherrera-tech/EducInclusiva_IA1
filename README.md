@@ -91,7 +91,7 @@ un aviso en la barra de notificaciones, aunque tengan la app cerrada.
 
 ## 🚀 Cómo correrla
 
-**Requisitos:** [Flutter](https://docs.flutter.dev/get-started/install) 3.x, un proyecto de Supabase
+**Requisitos:** [Flutter](https://docs.flutter.dev/get-started/install) 3.x
 y un proyecto de Supabase (la clave de Gemini vive como secreto en la función `gemini-proxy`, ver `docs/GUIA_CLAVE_GEMINI.md`).
 
 ```bash
