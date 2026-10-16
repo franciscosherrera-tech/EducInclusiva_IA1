@@ -1,12 +1,77 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/supabase_config.dart';
 
 class GeminiService {
-  final String _apiKey = const String.fromEnvironment(
+  static const String _defaultKey = String.fromEnvironment(
     'GEMINI_KEY',
     defaultValue: 'AQ.Ab8RN6LpFwcHKkY6Q1oeZxtpbIwxrpzPJxlHmJgwsGO8TX3lZQ',
   );
+
+  final http.Client _client;
+  final String? Function() _tokenProvider;
+  final String _apiKey;
+
+  /// [client], [tokenProvider] y [apiKey] solo se pasan en las pruebas.
+  GeminiService({
+    http.Client? client,
+    String? Function()? tokenProvider,
+    String? apiKey,
+  })  : _client = client ?? http.Client(),
+        _tokenProvider = tokenProvider ?? _sessionToken,
+        _apiKey = apiKey ?? _defaultKey;
+
+  static String? _sessionToken() {
+    try {
+      return Supabase.instance.client.auth.currentSession?.accessToken;
+    } catch (_) {
+      return null; // Supabase sin inicializar (pruebas)
+    }
+  }
+
+  /// Llama a Gemini. Primero por la función `gemini-proxy` de Supabase, donde
+  /// vive la clave. Si la función todavía no está desplegada, usa la clave
+  /// guardada en la app (respaldo temporal hasta completar la migración).
+  Future<http.Response> _post(String modelo, String body) async {
+    final token = _tokenProvider();
+    if (token != null) {
+      final res = await _client
+          .post(
+            Uri.parse(
+                '${SupabaseConfig.url}/functions/v1/gemini-proxy?model=$modelo'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+              'apikey': SupabaseConfig.anonKey,
+            },
+            body: body,
+          )
+          .timeout(const Duration(seconds: 60));
+      // Solo nuestra función pone este encabezado
+      if (res.headers['x-proxy'] == 'gemini') return res;
+      debugPrint(
+          'gemini-proxy no disponible (${res.statusCode}), uso respaldo');
+    }
+
+    if (_apiKey.isEmpty) {
+      return http.Response('{"error":"sin clave de Gemini"}', 403);
+    }
+    return _client
+        .post(
+          Uri.parse(
+            'https://generativelanguage.googleapis.com/v1beta/models/$modelo:generateContent',
+          ),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': _apiKey,
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 60));
+  }
 
   static const List<String> _modelos = [
     'gemini-3.5-flash-lite',
@@ -70,8 +135,12 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
     bool isTeaMode = false,
     String profileInstructions = '',
   }) async {
-    if (_apiKey.isEmpty || _apiKey == 'PEGA_AQUI_TU_CLAVE') {
-      return 'Falta configurar la clave de la API en GeminiService.';
+    // Hace falta una sesión (la clave vive en el servidor) o, mientras dure la
+    // migración, la clave guardada en la app.
+    final hasFallbackKey =
+        _apiKey.isNotEmpty && _apiKey != 'PEGA_AQUI_TU_CLAVE';
+    if (_tokenProvider() == null && !hasFallbackKey) {
+      return 'Error de configuración de la IA: iniciá sesión para usar el tutor.';
     }
 
     final List<Map<String, dynamic>> contents = [];
@@ -123,18 +192,7 @@ frases cortas, lenguaje literal, sin metáforas ni ironías.
     for (final modelo in _modelos) {
       for (int intento = 1; intento <= _intentosPorModelo; intento++) {
         try {
-          final response = await http
-              .post(
-                Uri.parse(
-                  'https://generativelanguage.googleapis.com/v1beta/models/$modelo:generateContent',
-                ),
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-goog-api-key': _apiKey,
-                },
-                body: body,
-              )
-              .timeout(const Duration(seconds: 60));
+          final response = await _post(modelo, body);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(utf8.decode(response.bodyBytes));
